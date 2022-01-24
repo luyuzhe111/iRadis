@@ -1,22 +1,14 @@
 import dash
 from dash.dependencies import Input, Output, State
-import dash_html_components as html
-import dash_core_components as dcc
+from dash import dcc, html
 import dash_bootstrap_components as dbc
-import dash_table
 import plotly.express as px
-import re
-import time
 from skimage import io
 import json
-import glob
-from io import BytesIO
-import base64
 from PIL import Image
 import shape_utils
 import numpy as np
 import pandas as pd
-from scipy import ndimage
 import cv2
 from netdissect import imgviz
 from compute_unit_stats import (
@@ -37,7 +29,7 @@ labels_dropdown = {
 }
 
 conv_layers = {'conv1_1': 'features.conv1_1', 'conv1_2': 'features.conv1_2',
-               'conv2_1': 'features.conv2_1', 'conv2_2': 'features.conv2_2', 
+               'conv2_1': 'features.conv2_1', 'conv2_2': 'features.conv2_2',
                'conv3_1': 'features.conv3_1', 'conv3_2': 'features.conv3_2', 'conv3_3': 'features.conv3_3',
                'conv4_1': 'features.conv4_1', 'conv4_2': 'features.conv4_2', 'conv4_3': 'features.conv4_3',
                'conv5_1': 'features.conv5_1', 'conv5_2': 'features.conv5_2', 'conv5_3': 'features.conv5_3'}
@@ -56,7 +48,7 @@ resdir = 'results/%s-%s-%s-%s' % (args.model, args.dataset, default_layer, int(a
 
 # load model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = load_model().to(device)
+model = load_model(device=device)
 model.retain_layer(default_layer)
 
 # load dataset
@@ -67,13 +59,13 @@ transform = transforms.Compose([
 ])
 
 dataset = load_dataset()
-dataloader = DataLoader(dataset, batch_size=128, num_workers=4, pin_memory=True)
+dataloader = DataLoader(dataset, batch_size=128, num_workers=0, pin_memory=True)
 
 # load unit stats
 rq = compute_rq(model, dataset, default_layer, resdir, args)
 
 # compute acts for the test set
-acts = compute_act(model, dataloader, default_layer, device)
+acts = compute_act(model, dataloader, default_layer, device, resdir)
 
 # compute quantile embedding for the test set
 quantile_table = rq.readout()
@@ -84,9 +76,9 @@ data_columns = ['d' + str(i) for i in range(acts.shape[0])]
 df = pd.DataFrame(quantile_mat.T, columns=data_columns)
 
 tsne_df = cluster_units(df, data_columns)
-scatter = px.scatter(tsne_df, 
-                     x="tsne-2d-one", 
-                     y="tsne-2d-two", 
+scatter = px.scatter(tsne_df,
+                     x="tsne-2d-one",
+                     y="tsne-2d-two",
                      color="label",
                      hover_data={'unit': True, 'label':True, 'tsne-2d-one': False, 'tsne-2d-two': False,'act': ':.2f'})
 
@@ -121,7 +113,7 @@ bar_fig.update_yaxes(showticklabels=False, showgrid=False, title_text="")
 external_stylesheets = [dbc.themes.BOOTSTRAP, "assets/image_annotation_style.css"]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
-with open('/home/ubuntu/luy/breast_cancer/ml/json/whole_test_img.json', 'r') as f:
+with open('../json/whole_test_img.json', 'r') as f:
     filelist = json.load(f)
 
 server = app.server
@@ -216,7 +208,7 @@ selected_patch = dbc.Card(
                                             'displaylogo': False},
                                     style={'height': patch_height}
                                 ),
-                                
+
                                 dcc.Graph(
                                     id="max-unit-act",
                                     figure=placeholder,
@@ -240,7 +232,7 @@ scatter_plot = dbc.Card(
             [
                 dbc.Row(
                     [
-                    
+
                         dbc.Col(
                             [
                                 dcc.Graph(
@@ -259,7 +251,7 @@ scatter_plot = dbc.Card(
                             html.Pre(id='after-act-stats', style={"height": '300px', "overflowY": "scroll"}), width=4
                         ),
                     ]
-                )  
+                )
             ]
         ),
         dbc.CardFooter(
@@ -293,7 +285,7 @@ button_height = '35px'
 div_for_plot = html.Div([
     html.Div([
         dcc.Input(id='input', value='', style={'height': button_height}),
-        html.Button('Add label', id='submit', style={'height': button_height, 
+        html.Button('Add label', id='submit', style={'height': button_height,
                                                      "margin-right": "15px"})
     ]),
 
@@ -307,14 +299,14 @@ div_for_plot = html.Div([
             clearable=False,
             style={'height': button_height, 'width': '15vw'}
         ),
-    ]), 
+    ]),
 
     html.Div(
         html.Button("Label units", id="confirm-label", style={'height': button_height}),
     ),
-    
+
     html.Div(
-        dcc.Loading(id="loading", type="default", children=[html.Div([html.Div(id="loading-2")])], 
+        dcc.Loading(id="loading", type="default", children=[html.Div([html.Div(id="loading-2")])],
                     style={'height': button_height, "margin-left": "100px"})
     )
 
@@ -330,14 +322,14 @@ app.layout = html.Div(
                         dbc.Col(image_annotation_card),
                         dbc.Col(
                             children=[
-#                                 dcc.Dropdown(
-#                                     id="layer-dropdown",
-#                                     options=[
-#                                         {"label": k, "value": v} for k, v in conv_layers.items()
-#                                     ],
-#                                     value=default_layer,
-#                                     clearable=False,
-#                                 ),
+                                # dcc.Dropdown(
+                                #     id="layer-dropdown",
+                                #     options=[
+                                #         {"label": k, "value": v} for k, v in conv_layers.items()
+                                #     ],
+                                #     value=default_layer,
+                                #     clearable=False,
+                                # ),
                                 html.Div(
                                     dcc.Graph(
                                         id='bar',
@@ -347,7 +339,7 @@ app.layout = html.Div(
                                     style={"width": '675px', "overflowX": "scroll"}
                                 ),
                                 selected_patch,
-                                div_for_plot, 
+                                div_for_plot,
                                 scatter_plot,
                             ],
                         )
@@ -680,6 +672,7 @@ def px_fig2array(fname=None):
         img = Image.open('data/tmp.png').convert("L")
     else:
         img = Image.open(fname).convert("L")
+
     img_np = np.asarray(img)
 
     return img_np
@@ -829,5 +822,5 @@ app.clientside_callback(
     [Input("download-button", "n_clicks")],
 )
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run_server(host='0.0.0.0', port=8050)

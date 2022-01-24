@@ -1,7 +1,7 @@
 import collections, torch, torchvision, numpy
 import models.vgg as vgg
 
-# Return a version of vgg11 where the layers are given their research names.
+# Return a version of vgg11 where the layers are given their research names
 def vgg11(*args, tiny=False, **kwargs):
     model = vgg.vgg11(*args, tiny=tiny, **kwargs)
     model.features = torch.nn.Sequential(collections.OrderedDict(zip([
@@ -58,7 +58,6 @@ def vgg11_bn(*args, tiny=False, **kwargs):
         model.classifier)))
 
     return model
-
 
 
 def vgg16(*args, tiny=False, **kwargs):

@@ -1,7 +1,7 @@
 import torch
 import json
 from PIL import Image
-import random
+
 
 class PatchDataset(torch.utils.data.Dataset):
     def __init__(self, data_lst, resolution=128, transform=None, group=None):
@@ -10,23 +10,6 @@ class PatchDataset(torch.utils.data.Dataset):
         
         if group is not None:
             data = [i for i in data if i['tag'] == group]
-        else:
-            lesion = [i for i in data if i['target'] == 1]
-            
-            normal = [i for i in data if i['target'] == 0]
-            random.seed(0)
-            random.shuffle(normal)
-            normal = normal[:len(lesion)]
-            
-            data = normal + lesion
-            
-            random.seed(0)
-            random.shuffle(data)    
-        
-        if group == 'true_negative' or group == 'false_positive':
-            random.seed(0)
-            random.shuffle(data)
-            data = data[:5000]
         
         self.data = data
         self.resolution = resolution
@@ -51,7 +34,6 @@ class PatchDataset(torch.utils.data.Dataset):
         if self.transform is not None:
             img = self.transform(img)
         return img, label, pred, image_dir
-
 
     def __len__(self):
         return len(self.data)
