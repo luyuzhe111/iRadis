@@ -8,14 +8,13 @@ import json
 from PIL import Image
 import shape_utils
 import os
+import base64
 import numpy as np
 import pandas as pd
 import cv2
-from netdissect import imgviz
+from netdissect import imgviz, pbar, tally
 from compute_unit_stats import (
-    load_model, load_dataset,
-    compute_rq, compute_act, compute_act_quantile,
-    cluster_units
+    load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs
 )
 from torchvision import transforms
 import torch.nn.functional as F
@@ -31,19 +30,21 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
 
-exp = 'adam_20220315041434'
-ckpt_dir = f'../ckpt/vgg16_bn_{exp}'
+data_v = 'version_0'
+exp = 'adam_20220318012236'
+ckpt_dir = f'../ckpt/{data_v}/vgg16_bn_{exp}'
 data_res = 512
 num_units = 512
 default_layer = 'features.conv5_3'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = load_model(exp=os.path.basename(ckpt_dir), device=device)
 model.retain_layer(default_layer)
+labels = ['normal', 'lesion']
 
 # decalare model settings
 quantile = 0.99
 args = EasyDict(model='vgg16_bn', exp=exp, quantile=quantile)
-resdir = 'results/%s-%s-%s-%s' % (args.model, args.exp, default_layer, int(args.quantile * 100))
+resdir = f'results/{data_v}/%s-%s-%s-%s' % (args.model, args.exp, default_layer, int(args.quantile * 100))
 
 # iou threshold
 iou_th = 0.2
@@ -54,36 +55,72 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-dataset = load_dataset(transform=transform)
+dataset = load_dataset(data_v=data_v, transform=transform)
 dataset.resolution = data_res
 dataloader = DataLoader(dataset, batch_size=16, num_workers=torch.get_num_threads(), pin_memory=True)
 
 pca_acts = pd.read_csv(f'{ckpt_dir}/pca_acts.csv')
 pca_acts['label'] = 'unknown'
 pca_acts['iou'] = 0
+pca_acts['unit'] = range(num_units)
 print(pca_acts.head())
 
 # load unit stats
 rq = compute_rq(model, dataset, default_layer, resdir, args)
 
-with open('../json/test_dev.json', 'r') as f:
+# load topk
+topk = compute_topk(model, dataset, default_layer, resdir)
+
+# load topk imagees
+unit_images = load_topk_imgs(model, dataset, rq, topk, default_layer, quantile, resdir)
+
+with open(f'../json/{data_v}/test_dev.json', 'r') as f:
     test_data = json.load(f)
 
 dft_img = '.' + test_data[0]['patch_dir']
+
+def inference(model, fname):
+    img = io.imread(fname)
+    input_img = transform(Image.fromarray(img))
+    output = model(input_img.unsqueeze(1).to(device))
+    prob = F.softmax(output, dim=1)
+    pred = torch.argmax(prob, dim=1)
+
+    return pred.item(), torch.max(prob[0]).item()
+
+pred, prob = inference(model, dft_img)
+
 patch_height = '200px'
 patch_viewer_layout = {
+    'title': f'{labels[pred]}: {round(prob, 3)}', 'title_x': 0.5,
     'dragmode': "drawclosedpath",
     'margin': dict(l=0, r=0, b=0, t=20, pad=0),
     'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
+    'font': dict(size=8)
 }
 patch_viewer = px.imshow(io.imread(dft_img), binary_string=True)
 patch_viewer.update_layout(**patch_viewer_layout)
 patch_viewer.update_xaxes(showticklabels=False)
 patch_viewer.update_yaxes(showticklabels=False)
 
+dft_img = '.' + test_data[0]['patch_dir']
+mask_height = '200px'
+mask_viewer_layout = {
+    'title': f'unit with max iou: ', 'title_x': 0.5,
+    'margin': dict(l=0, r=0, b=0, t=20, pad=0),
+    'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
+    'font': dict(size=8)
+}
+mask_viewer = px.imshow(io.imread(dft_img), binary_string=True)
+mask_viewer.update_layout(**mask_viewer_layout)
+mask_viewer.update_xaxes(showticklabels=False)
+mask_viewer.update_yaxes(showticklabels=False)
+
+dft_img = '.' + test_data[0]['patch_dir']
+
 plot_height = 300
 pca_plot_args = dict(x='x', y='y', color="label",
-                     hover_data={'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
+                     hover_data={'unit':True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
 pca_plot_layouts = dict(
     legend=dict(
         yanchor='bottom',
@@ -128,6 +165,20 @@ patch_viewer = dbc.Card(
                                 ),
                             ], width=4
                         ),
+
+                        dbc.Col(
+                            [
+                                dcc.Graph(
+                                    id='mask',
+                                    figure=mask_viewer,
+                                    config={"modeBarButtonsToRemove": ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d',
+                                                                       'autoScale2d', 'resetScale2d'],
+                                            'displaylogo': False},
+                                    style={'height': mask_height}
+
+                                )
+                            ]
+                        )
                     ]
                 )
 
@@ -161,8 +212,20 @@ label_unit_utils = html.Div([
         dbc.Col(
             dcc.Input(id='input', value='', style={'height': button_height, 'width': blank_width})
         ),
+
         dbc.Col(
             html.Button('add', id='submit', style={'height': button_height, 'width': button_width})
+        ),
+
+        dbc.Col(
+            html.Div(
+                id='topk',
+                children=[],
+                style={'height': '150px',
+                       "width": '270px',
+                       "margin-top": "15px",
+                       "overflowX": "scroll"}
+            ), width=4
         )
     ], style={"margin-bottom": "15px"}),
 
@@ -280,7 +343,17 @@ def browse_image(
     if image_index_change != 0:
         filename = '.' + image_files_data["files"][image_files_data["current"]]['patch_dir']
         img = io.imread(filename)
+
+        input_img = transform(Image.fromarray(img))
+        output = model(input_img.unsqueeze(1).to(device))
+        prob = F.softmax(output, dim=1)
+        pred = torch.argmax(prob, dim=1)
+
+        labels = ['normal', 'lesion']
+        title = f'{labels[pred.item()]}: {round(torch.max(prob[0]).item(), 3)}'
+
         fig = px.imshow(img, binary_string=True)
+        patch_viewer_layout['title'] = title
         fig.update_layout(
             **patch_viewer_layout
         )
@@ -301,10 +374,11 @@ def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
 
 
 @app.callback(
-     Output("unit_ious", 'data'),
+    [Output("unit_ious", 'data'), Output("mask", "figure")],
     [Input("patch", "relayoutData")],
+    State("image_files", "data"),
 )
-def compute_unit_ious(relayout_data):
+def compute_unit_ious(relayout_data, image_files_data):
     if relayout_data is None or 'shapes' not in relayout_data.keys():
         return dash.no_update
     else:
@@ -326,8 +400,29 @@ def compute_unit_ious(relayout_data):
         cv2.fillPoly(gt_mask, pts=[contours[0]], color=(1, 1))
 
         ious = [iou_tensor(mask, torch.from_numpy(gt_mask) > 0) for mask in masks]
+
+        max_unit = np.argmax(np.array(ious))
+        fname = '.' + image_files_data["files"][image_files_data["current"]]['patch_dir']
+
+        max_img = transform(Image.open(fname))
+        model(max_img.unsqueeze(1).to(device))
+
+        acts = model.retained_layer(default_layer).cpu()
+        max_np = ivsmall.masked_image(max_img, acts, (0, max_unit))
+        max_fig = px.imshow(max_np, binary_string=True)
+        max_fig.update_layout(
+            title=f'unit {max_unit} max iou: {round(max(ious), 2)}', title_x=0.5,
+            margin=dict(l=0, r=0, b=10, t=20, pad=0),
+            font=dict(
+                size=8,
+            )
+        )
+        max_fig.update_xaxes(showticklabels=False)
+        max_fig.update_yaxes(showticklabels=False)
+
         print('max iou score:', max(ious))
-        return ious
+
+        return ious, max_fig
 
 
 def px_fig2array(fname=None):
@@ -340,6 +435,23 @@ def px_fig2array(fname=None):
 
     return img_np
 
+@app.callback(
+    Output("topk", "children"),
+    [Input('scatter', 'clickData')]
+)
+def show_topk(click_data):
+    if click_data is None:
+        return dash.no_update
+
+    unit = click_data['points'][0]['customdata'][0]
+    print(unit, unit_images[unit].size)
+
+    topk_imgs = unit_images[unit]
+    tmp_name = './data/topk_tmp.png'
+    topk_imgs.save(tmp_name)
+
+    topk_base64 = base64.b64encode(open(tmp_name, 'rb').read()).decode('ascii')
+    return html.Img(src='data:image/png;base64,{}'.format(topk_base64), style={'height':'85%'})
 
 @app.callback(
     [Output("scatter", 'figure'), Output("pca_df", 'data'),  Output('report', 'children')],

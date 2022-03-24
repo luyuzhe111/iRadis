@@ -6,41 +6,50 @@ from torchvision import transforms
 import os
 from data_utils import PatchDataset
 import numpy as np
-from netdissect import nethook
+from netdissect import nethook, imgviz
 from netdissect import pbar, tally
 from sklearn.manifold import TSNE
+from experiment import dissect_experiment as experiment
 
-    
+
 def resfile(resdir, f):
     return os.path.join(resdir, f)
 
 
-def load_model(model='vgg16_bn', device=None, exp='vgg16_bn', grayscale=True, num_classes=2):
+def load_model(model='vgg16_bn', device=None, data_v='version_0', exp='vgg16_bn',  num_classes=2):
     if 'resnet' in model:
-        model = eval(f'{model}(grayscale={grayscale})')
+        model = eval(f'{model}()')
         model.fc = nn.Linear(model.fc.in_features, num_classes)
     else:
-        model = eval(f'{model}(grayscale={grayscale})')
+        model = eval(f'{model}()')
         model.classifier.fc8a = nn.Linear(model.classifier.fc8a.in_features, num_classes)
     
-    model.load_state_dict(torch.load(f'../ckpt/{exp}/best_model.pth', map_location=torch.device(device)))
+    model.load_state_dict(torch.load(f'../ckpt/{data_v}/{exp}/best_model.pth', map_location=torch.device(device)))
     
     model.eval()
     model = nethook.InstrumentedModel(model).eval()
     return model.to(device)
 
 
-def load_dataset(exp='vgg16_bn', grayscale=True):
-    transform = transforms.Compose([
-        transforms.Resize(128),
-        transforms.Grayscale(num_output_channels=1 if grayscale else 3),
-        transforms.ToTensor()
-    ])
-    test_data = f'../json/{exp}_result_128.json'
-    target_dataset = PatchDataset(test_data, transform=transform, group=None)
-    target_dataset.resolution = 128
+def load_dataset(data_v='version_0', transform=None):
+    test_data = f'../json/{data_v}/test_dev.json'
+    target_dataset = PatchDataset(test_data, transform=transform)
     return target_dataset
 
+
+def load_topk_imgs(model, dataset, rq, topk, layer, quantile, resdir):
+    pbar.descnext('unit_images')
+    iv = imgviz.ImageVisualizer((100, 100), source=dataset, quantiles=rq, level=rq.quantiles(quantile))
+    def compute_acts(image_batch):
+        image_batch = image_batch[0].cuda()
+        _ = model(image_batch)
+        acts_batch = model.retained_layer(layer)
+        return acts_batch
+    unit_images = iv.masked_images_for_topk(
+        compute_acts, dataset, topk, k=5, num_workers=torch.get_num_threads(), pin_memory=True,
+        cachefile=resfile(resdir, 'top5images.npz')
+    )
+    return unit_images
 
 def compute_topk(model, target_dataset, layername, resdir):
     pbar.descnext('topk')
@@ -55,24 +64,22 @@ def compute_topk(model, target_dataset, layername, resdir):
         return acts
 
     topk = tally.tally_topk(compute_image_max, target_dataset, sample_size=len(target_dataset),
-            batch_size=32, num_workers=0, k=len(target_dataset), pin_memory=True, cachefile=resfile(resdir, 'topk.npz'))
+            batch_size=16, num_workers=0, k=100, pin_memory=True, cachefile=resfile(resdir, 'topk.npz'))
     
     return topk
 
 
 def compute_rq(model, target_dataset, layername, resdir, args):
     pbar.descnext('rq')
-    # upfn = experiment.make_upfn(args, target_dataset, model, layername)
+    upfn = experiment.make_upfn(args, target_dataset, model, layername)
     def compute_samples(batch, *args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         image_batch = batch.to(device)
         _ = model(image_batch)
         acts = model.retained_layer(layername)
 
-        return acts.permute(0, 2, 3, 1).contiguous().view(-1, acts.shape[1])
-
-        # hacts = acts # upfn(acts)
-        # return hacts.permute(0, 2, 3, 1).contiguous().view(-1, acts.shape[1])
+        hacts = upfn(acts)
+        return hacts.permute(0, 2, 3, 1).contiguous().view(-1, acts.shape[1])
 
     rq = tally.tally_quantile(compute_samples, target_dataset,
                               sample_size=len(target_dataset),
