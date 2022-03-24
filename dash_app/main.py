@@ -484,6 +484,7 @@ def update_plot(label, n_click, unit_ious, pca_df):
         updated_pca_df = pca_df.copy()
         updated_pca_df['label'] = updated_labels
         updated_pca_df['iou'] = updated_ious
+        updated_pca_df['unit'] = range(num_units)
 
         fig = px.scatter(updated_pca_df, **pca_plot_args)
         fig.update_layout(**pca_plot_layouts)
