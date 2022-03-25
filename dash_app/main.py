@@ -216,17 +216,6 @@ label_unit_utils = html.Div([
         dbc.Col(
             html.Button('add', id='submit', style={'height': button_height, 'width': button_width})
         ),
-
-        dbc.Col(
-            html.Div(
-                id='topk',
-                children=[],
-                style={'height': '150px',
-                       "width": '270px',
-                       "margin-top": "15px",
-                       "overflowX": "scroll"}
-            ), width=4
-        )
     ], style={"margin-bottom": "15px"}),
 
     dbc.Row([
@@ -245,6 +234,19 @@ label_unit_utils = html.Div([
             html.Button("update", id="confirm-label", style={'height': button_height, 'width': button_width})
         )
     ]),
+
+    dbc.Row([
+        dbc.Col(
+            html.Div(
+                id='topk',
+                children=[],
+                style={'height': '150px',
+                       "width": '265px',
+                       "margin-top": "15px",
+                       "overflowX": "scroll"}
+            ), width=4
+        )
+    ])
 ], style={'display': 'inline-block'})
 
 
