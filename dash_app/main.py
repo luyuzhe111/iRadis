@@ -14,7 +14,7 @@ import pandas as pd
 import cv2
 from netdissect import imgviz, pbar, tally
 from compute_unit_stats import (
-    load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs
+    load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs, inference
 )
 from torchvision import transforms
 import torch.nn.functional as F
@@ -79,16 +79,7 @@ with open(f'../json/{data_v}/test_dev.json', 'r') as f:
 
 dft_img = '.' + test_data[0]['patch_dir']
 
-def inference(model, fname):
-    img = io.imread(fname)
-    input_img = transform(Image.fromarray(img))
-    output = model(input_img.unsqueeze(1).to(device))
-    prob = F.softmax(output, dim=1)
-    pred = torch.argmax(prob, dim=1)
-
-    return pred.item(), torch.max(prob[0]).item()
-
-pred, prob = inference(model, dft_img)
+pred, prob = inference(model, io.imread(dft_img), transform, device)
 
 patch_height = '200px'
 patch_viewer_layout = {
@@ -119,8 +110,8 @@ mask_viewer.update_yaxes(showticklabels=False)
 dft_img = '.' + test_data[0]['patch_dir']
 
 plot_height = 300
-pca_plot_args = dict(x='x', y='y', color="label",
-                     hover_data={'unit':True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
+pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size_max=10,
+                     hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
 pca_plot_layouts = dict(
     legend=dict(
         yanchor='bottom',
@@ -266,7 +257,7 @@ unit_vis = dbc.Card(
                                 ),
                                 dcc.Store(
                                     id="pca_df",
-                                    data=pca_acts[['label', 'x', 'y', 'iou']].to_dict(),
+                                    data=pca_acts[['label', 'x', 'y', 'iou', 'unit']].to_dict(),
                                 ),
                                 dcc.Store(
                                     id="unit_ious",
@@ -457,12 +448,13 @@ def show_topk(click_data):
 
 @app.callback(
     [Output("scatter", 'figure'), Output("pca_df", 'data'),  Output('report', 'children')],
-    [Input("label-dropdown", "value"), Input('confirm-label', 'n_clicks')],
-    [State("unit_ious", 'data'), State("pca_df", 'data')]
+    [Input("label-dropdown", "value"), Input('confirm-label', 'n_clicks'), Input("unit_ious", 'data')],
+    [State("pca_df", 'data')]
 )
 def update_plot(label, n_click, unit_ious, pca_df):
     label = dash.callback_context.inputs['label-dropdown.value']
     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
+
     if 'confirm-label' in changed_id:
         pca_df = pd.DataFrame.from_dict(pca_df)
         print(pca_df.head())
@@ -503,6 +495,25 @@ def update_plot(label, n_click, unit_ious, pca_df):
         grouped_mean_iou = {k: {'num':w, 'iou':round(v, 4)} for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
 
         return fig, updated_pca_df.to_dict(), json.dumps(grouped_mean_iou, indent=2)
+
+    elif 'unit_ious' in changed_id:
+        ious = np.array(unit_ious)
+
+        over_op = np.ones(len(ious)) * 10
+        under_op = np.ones(len(ious)) * 5
+
+        ops = np.where(ious > iou_th, over_op, under_op)
+
+        preview_args = pca_plot_args
+        preview_args['size'] = ops
+
+        fig = px.scatter(pca_df, **preview_args)
+        fig.update_layout(**pca_plot_layouts)
+        fig.update_xaxes(showticklabels=False, title_text="comp-1")
+        fig.update_yaxes(showticklabels=False, title_text="comp-2")
+
+        return fig, pca_df, []
+
     else:
         return dash.no_update
 

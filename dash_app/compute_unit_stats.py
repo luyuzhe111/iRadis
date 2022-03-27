@@ -3,6 +3,8 @@ import torch.nn as nn
 from models.vgg_old import vgg11, vgg16, vgg16_bn
 from tqdm import tqdm
 from torchvision import transforms
+import torch.nn.functional as F
+from PIL import Image
 import os
 from data_utils import PatchDataset
 import numpy as np
@@ -10,6 +12,15 @@ from netdissect import nethook, imgviz
 from netdissect import pbar, tally
 from sklearn.manifold import TSNE
 from experiment import dissect_experiment as experiment
+
+
+def inference(model, img, transform, device):
+    input_img = transform(Image.fromarray(img))
+    output = model(input_img.unsqueeze(1).to(device))
+    prob = F.softmax(output, dim=1)
+    pred = torch.argmax(prob, dim=1)
+
+    return pred.item(), torch.max(prob[0]).item()
 
 
 def resfile(resdir, f):
