@@ -12,10 +12,12 @@ import base64
 import numpy as np
 import pandas as pd
 import cv2
+from skimage.util import view_as_blocks
 from netdissect import imgviz, pbar, tally
 from compute_unit_stats import (
     load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs, inference
 )
+from utils import pad_img
 from torchvision import transforms
 import torch.nn.functional as F
 import torch
@@ -77,6 +79,56 @@ unit_images = load_topk_imgs(model, dataset, rq, topk, default_layer, quantile, 
 with open(f'../json/{data_v}/test_dev.json', 'r') as f:
     test_data = json.load(f)
 
+dft_mamm = '.' + test_data[0]['imaging_dir']
+padded_img = pad_img(np.array(Image.open(dft_mamm)), data_res, data_res)
+
+cache_dir = os.path.dirname(dft_mamm).replace('../patch/version_0/test_data/', './cache/')
+os.makedirs(cache_dir, exist_ok=True)
+cache_f = os.path.join(cache_dir, 'lesion_patches.json')
+if os.path.exists(cache_f):
+    with open(cache_f, 'r') as f:
+        lesion_fs = json.load(f)
+else:
+    patches = view_as_blocks(padded_img, (data_res, data_res)).squeeze()
+    mask = (np.count_nonzero(patches, axis=(2, 3)) / data_res ** 2) > 0.9
+    val_inds = np.argwhere(mask > 0)
+    val_patches = patches[val_inds[:, 0], val_inds[:, 1], ...]
+
+    inputs = torch.stack([transform(Image.fromarray(i)) for i in val_patches], dim=0)
+    with torch.no_grad():
+        outputs = model(inputs)
+        prob = F.softmax(outputs, dim=1)
+        pred = torch.argmax(prob, dim=1)
+
+    lesion_fs = []
+    for i, p in enumerate(pred):
+        if p == 1:
+            lesion_f = f'{cache_dir}/lesion_{i}.png'
+            im = Image.fromarray(val_patches[i])
+            im.save(lesion_f)
+            lesion_fs.append(lesion_f)
+
+    with open(cache_f, 'w') as f:
+        json.dump(lesion_fs, f)
+
+preview_height = '150px'
+preview_layout = {
+    'margin': dict(l=0, r=0, b=0, t=0, pad=0),
+}
+preview = px.imshow(io.imread(lesion_fs[0]), binary_string=True)
+preview.update_layout(**preview_layout)
+preview.update_xaxes(showticklabels=False)
+preview.update_yaxes(showticklabels=False)
+
+img_height = '500px'
+img_viewer_layout = {
+    'margin': dict(l=0, r=0, b=0, t=0, pad=0),
+}
+img_viewer = px.imshow(io.imread(dft_mamm), binary_string=True)
+img_viewer.update_layout(**img_viewer_layout)
+img_viewer.update_xaxes(showticklabels=False)
+img_viewer.update_yaxes(showticklabels=False)
+
 dft_img = '.' + test_data[0]['patch_dir']
 
 pred, prob = inference(model, io.imread(dft_img), transform, device)
@@ -94,7 +146,6 @@ patch_viewer.update_layout(**patch_viewer_layout)
 patch_viewer.update_xaxes(showticklabels=False)
 patch_viewer.update_yaxes(showticklabels=False)
 
-dft_img = '.' + test_data[0]['patch_dir']
 mask_height = '200px'
 mask_viewer_layout = {
     'title': f'unit with max iou: ', 'title_x': 0.5,
@@ -107,10 +158,8 @@ mask_viewer.update_layout(**mask_viewer_layout)
 mask_viewer.update_xaxes(showticklabels=False)
 mask_viewer.update_yaxes(showticklabels=False)
 
-dft_img = '.' + test_data[0]['patch_dir']
-
 plot_height = 300
-pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size_max=10,
+pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size_max=5, size=[5] * num_units,
                      hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
 pca_plot_layouts = dict(
     legend=dict(
@@ -134,6 +183,52 @@ labels_dropdown = {
     'calcification': 'calcification',
     'mass': 'mass'
 }
+
+image_viewer = dbc.Card(
+    id="imgbox",
+    children=[
+        dbc.CardHeader(html.H3("Mammogram")),
+        dbc.CardBody(
+            [
+                dbc.Row(
+                    dbc.Col(
+                        [
+                            dcc.Graph(
+                                id='mamm',
+                                figure=img_viewer,
+                                config={"modeBarButtonsToRemove": ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d',
+                                                                   'autoScale2d', 'resetScale2d'],
+                                        'displaylogo': False},
+                                style={'height': img_height}
+                            )
+                        ]
+                    )
+                ),
+
+                dbc.Row(
+                    html.Div([
+                        dbc.Col([
+                            dcc.Graph(
+                                id='preview',
+                                figure=preview,
+                                config={"modeBarButtonsToRemove": ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d',
+                                                                   'autoScale2d', 'resetScale2d'],
+                                        'displaylogo': False},
+                                style={'height': preview_height}
+                            )
+
+                        ])
+                    ], style={'height': '160px',
+                               "width": '265px',
+                               "margin-top": "15px",
+                               "overflowX": "scroll"}
+                    )
+                )
+            ]
+        ),
+    ], style={}
+)
+
 
 patch_viewer = dbc.Card(
     id="patchbox",
@@ -197,7 +292,7 @@ patch_viewer = dbc.Card(
 
 button_height = '35px'
 button_width = '80px'
-blank_width = '160px'
+blank_width = '120px'
 label_unit_utils = html.Div([
     dbc.Row([
         dbc.Col(
@@ -207,7 +302,7 @@ label_unit_utils = html.Div([
         dbc.Col(
             html.Button('add', id='submit', style={'height': button_height, 'width': button_width})
         ),
-    ], style={"margin-bottom": "15px"}),
+    ], style={"margin-bottom": "15px", "margin-top": "10px"}),
 
     dbc.Row([
         dbc.Col(
@@ -232,8 +327,8 @@ label_unit_utils = html.Div([
                 id='topk',
                 children=[],
                 style={'height': '150px',
-                       "width": '265px',
-                       "margin-top": "15px",
+                       "width": '240px',
+                       "margin-top": "45px",
                        "overflowX": "scroll"}
             ), width=4
         )
@@ -293,6 +388,11 @@ app.layout = dbc.Container(
         dbc.Row([
             dbc.Col(
                 [
+                    image_viewer
+                ], width=4
+            ),
+            dbc.Col(
+                [
                     dbc.Row(
                         [
                             dbc.Col(patch_viewer),
@@ -304,11 +404,11 @@ app.layout = dbc.Container(
                             dbc.Col(unit_vis),
                         ],
                     ),
-                ], width=8
+                ], width=6
             ),
-            dbc.Col(report, width=4)
+            dbc.Col(report, width=2)
         ])
-    ]
+    ],  fluid=True
 )
 
 
@@ -496,7 +596,8 @@ def update_plot(label, n_click, unit_ious, pca_df):
 
         return fig, updated_pca_df.to_dict(), json.dumps(grouped_mean_iou, indent=2)
 
-    elif 'unit_ious' in changed_id:
+    if 'unit_ious' in changed_id:
+        print('update size')
         ious = np.array(unit_ious)
 
         over_op = np.ones(len(ious)) * 10
@@ -506,6 +607,7 @@ def update_plot(label, n_click, unit_ious, pca_df):
 
         preview_args = pca_plot_args
         preview_args['size'] = ops
+        preview_args['size_max'] = 10
 
         fig = px.scatter(pca_df, **preview_args)
         fig.update_layout(**pca_plot_layouts)
