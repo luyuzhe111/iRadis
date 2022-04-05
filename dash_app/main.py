@@ -103,7 +103,9 @@ else:
     lesion_fs = []
     for i, p in enumerate(pred):
         if p == 1:
-            lesion_f = f'{cache_dir}/lesion_{i}.png'
+            print(val_inds[i])
+            x_start, y_start = val_inds[i]
+            lesion_f = f'{cache_dir}/lesion_{x_start}_{y_start}.png'
             im = Image.fromarray(val_patches[i])
             im.save(lesion_f)
             lesion_fs.append(lesion_f)
@@ -410,6 +412,33 @@ app.layout = dbc.Container(
         ])
     ],  fluid=True
 )
+
+
+@app.callback(
+    Output("mamm", "figure"),
+    [Input('preview', 'clickData')],
+)
+def show_lesion_patch(click_data):
+    cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
+    if cbcontext == 'preview.clickData':
+        _, y_start, x_start = os.path.basename(lesion_fs[0]).split('.png')[0].split('_')
+        x_start, y_start = int(x_start) * data_res, int(y_start) * data_res
+        x_end, y_end = x_start + data_res, y_start + data_res
+
+        fig = px.imshow(io.imread(dft_mamm), binary_string=True)
+        fig.update_layout(
+            margin=dict(l=0, r=0, b=0, t=0, pad=0),
+            shapes=[
+                dict(type="rect", xref="x", yref='y',
+                     x0=x_start, y0=y_start, x1=x_end, y1=y_end, line_color="yellow", line_width=1),
+            ]
+        )
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False)
+        return fig
+
+    else:
+        return dash.no_update
 
 
 @app.callback(
