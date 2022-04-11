@@ -12,14 +12,14 @@ import base64
 import numpy as np
 import pandas as pd
 import cv2
-from skimage.util import view_as_blocks
-from netdissect import imgviz, pbar, tally
+from netdissect import imgviz
 from compute_unit_stats import (
-    load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs, inference
+    load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs
 )
-from utils import pad_img
+from utils import (
+    inference, whole_image_inference, pad_img_row
+)
 from torchvision import transforms
-import torch.nn.functional as F
 import torch
 from torch.utils.data import DataLoader
 from netdissect.easydict import EasyDict
@@ -65,7 +65,6 @@ pca_acts = pd.read_csv(f'{ckpt_dir}/pca_acts.csv')
 pca_acts['label'] = 'unknown'
 pca_acts['iou'] = 0
 pca_acts['unit'] = range(num_units)
-print(pca_acts.head())
 
 # load unit stats
 rq = compute_rq(model, dataset, default_layer, resdir, args)
@@ -80,88 +79,65 @@ with open(f'../json/{data_v}/test_dev.json', 'r') as f:
     test_data = json.load(f)
 
 dft_mamm = '.' + test_data[0]['imaging_dir']
-padded_img = pad_img(np.array(Image.open(dft_mamm)), data_res, data_res)
+cropped_img, lesion_fs = whole_image_inference(dft_mamm, data_res, model, transform)
+img_height = '450px'
+img_viewer_layout = {
+    'margin': dict(l=0, r=0, b=20, t=0, pad=0),
+}
+img_viewer = px.imshow(cropped_img, binary_string=True)
+img_viewer.update_layout(**img_viewer_layout)
+img_viewer.update_xaxes(visible=False)
+img_viewer.update_yaxes(visible=False)
 
-cache_dir = os.path.dirname(dft_mamm).replace('../patch/version_0/test_data/', './cache/')
-os.makedirs(cache_dir, exist_ok=True)
-cache_f = os.path.join(cache_dir, 'lesion_patches.json')
-if os.path.exists(cache_f):
-    with open(cache_f, 'r') as f:
-        lesion_fs = json.load(f)
-else:
-    patches = view_as_blocks(padded_img, (data_res, data_res)).squeeze()
-    mask = (np.count_nonzero(patches, axis=(2, 3)) / data_res ** 2) > 0.9
-    val_inds = np.argwhere(mask > 0)
-    val_patches = patches[val_inds[:, 0], val_inds[:, 1], ...]
-
-    inputs = torch.stack([transform(Image.fromarray(i)) for i in val_patches], dim=0)
-    with torch.no_grad():
-        outputs = model(inputs)
-        prob = F.softmax(outputs, dim=1)
-        pred = torch.argmax(prob, dim=1)
-
-    lesion_fs = []
-    for i, p in enumerate(pred):
-        if p == 1:
-            print(val_inds[i])
-            x_start, y_start = val_inds[i]
-            lesion_f = f'{cache_dir}/lesion_{x_start}_{y_start}.png'
-            im = Image.fromarray(val_patches[i])
-            im.save(lesion_f)
-            lesion_fs.append(lesion_f)
-
-    with open(cache_f, 'w') as f:
-        json.dump(lesion_fs, f)
-
-preview_height = '150px'
+preview_height = '120px'
 preview_layout = {
     'margin': dict(l=0, r=0, b=0, t=0, pad=0),
 }
-preview = px.imshow(io.imread(lesion_fs[0]), binary_string=True)
+img_row = pad_img_row(lesion_fs, data_res)
+preview = px.imshow(img_row, binary_string=True)
 preview.update_layout(**preview_layout)
-preview.update_xaxes(showticklabels=False)
-preview.update_yaxes(showticklabels=False)
+preview.update_xaxes(visible=False)
+preview.update_yaxes(visible=False)
 
-img_height = '500px'
-img_viewer_layout = {
-    'margin': dict(l=0, r=0, b=0, t=0, pad=0),
-}
-img_viewer = px.imshow(io.imread(dft_mamm), binary_string=True)
-img_viewer.update_layout(**img_viewer_layout)
-img_viewer.update_xaxes(showticklabels=False)
-img_viewer.update_yaxes(showticklabels=False)
-
-dft_img = '.' + test_data[0]['patch_dir']
-
-pred, prob = inference(model, io.imread(dft_img), transform, device)
-
+place_holder = np.ones((data_res, data_res)) * 255
 patch_height = '200px'
 patch_viewer_layout = {
-    'title': f'{labels[pred]}: {round(prob, 3)}', 'title_x': 0.5,
+    'title': f'prediction:', 'title_x': 0.5,
     'dragmode': "drawclosedpath",
     'margin': dict(l=0, r=0, b=0, t=20, pad=0),
     'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
     'font': dict(size=8)
 }
-patch_viewer = px.imshow(io.imread(dft_img), binary_string=True)
+patch_viewer = px.imshow(place_holder, binary_string=True)
 patch_viewer.update_layout(**patch_viewer_layout)
-patch_viewer.update_xaxes(showticklabels=False)
-patch_viewer.update_yaxes(showticklabels=False)
+patch_viewer.update_xaxes(visible=False)
+patch_viewer.update_yaxes(visible=False)
 
-mask_height = '200px'
+max_act_height = patch_height
+max_act_viewer_layout = {
+    'title': f'max unit activation:', 'title_x': 0.5,
+    'margin': dict(l=0, r=0, b=0, t=20, pad=0),
+    'font': dict(size=8)
+}
+max_act_viewer = px.imshow(place_holder, binary_string=True)
+max_act_viewer.update_layout(**max_act_viewer_layout)
+max_act_viewer.update_xaxes(visible=False)
+max_act_viewer.update_yaxes(visible=False)
+
+mask_height = patch_height
 mask_viewer_layout = {
     'title': f'unit with max iou: ', 'title_x': 0.5,
     'margin': dict(l=0, r=0, b=0, t=20, pad=0),
     'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
     'font': dict(size=8)
 }
-mask_viewer = px.imshow(io.imread(dft_img), binary_string=True)
+mask_viewer = px.imshow(place_holder, binary_string=True)
 mask_viewer.update_layout(**mask_viewer_layout)
-mask_viewer.update_xaxes(showticklabels=False)
-mask_viewer.update_yaxes(showticklabels=False)
+mask_viewer.update_xaxes(visible=False)
+mask_viewer.update_yaxes(visible=False)
 
 plot_height = 300
-pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size_max=5, size=[5] * num_units,
+pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5,
                      hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
 pca_plot_layouts = dict(
     legend=dict(
@@ -206,8 +182,10 @@ image_viewer = dbc.Card(
                         ]
                     )
                 ),
+                html.Hr(),
+                dbc.Row(html.P(id='result', children=[f'{len(lesion_fs)} lesions detected.'])),
 
-                dbc.Row(
+                dbc.Row([
                     html.Div([
                         dbc.Col([
                             dcc.Graph(
@@ -218,14 +196,26 @@ image_viewer = dbc.Card(
                                         'displaylogo': False},
                                 style={'height': preview_height}
                             )
-
                         ])
-                    ], style={'height': '160px',
-                               "width": '265px',
-                               "margin-top": "15px",
-                               "overflowX": "scroll"}
+                    ], style={'height': preview_height, "width": '400px', "overflowX": "scroll"}
                     )
-                )
+                ])
+            ]
+        ),
+        dbc.CardFooter(
+            [
+                dcc.Store(
+                    id="image_files",
+                    data={"files": test_data, "current": 0},
+                ),
+                dbc.ButtonGroup(
+                    [
+                        dbc.Button("Previous image", id="previous_m", outline=True),
+                        dbc.Button("Next image", id="next_m", outline=True),
+                    ],
+                    size="lg",
+                    style={"width": "100%"},
+                ),
             ]
         ),
     ], style={}
@@ -257,6 +247,20 @@ patch_viewer = dbc.Card(
                         dbc.Col(
                             [
                                 dcc.Graph(
+                                    id="maxact",
+                                    figure=max_act_viewer,
+                                    config={"modeBarButtonsToAdd": ["eraseshape"],
+                                            "modeBarButtonsToRemove": ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d',
+                                                                       'autoScale2d', 'resetScale2d'],
+                                            'displaylogo': False},
+                                    style={'height': max_act_height}
+                                ),
+                            ], width=4
+                        ),
+
+                        dbc.Col(
+                            [
+                                dcc.Graph(
                                     id='mask',
                                     figure=mask_viewer,
                                     config={"modeBarButtonsToRemove": ['pan2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d',
@@ -270,22 +274,6 @@ patch_viewer = dbc.Card(
                     ]
                 )
 
-            ]
-        ),
-        dbc.CardFooter(
-            [
-                dcc.Store(
-                    id="image_files",
-                    data={"files": test_data, "current": 0},
-                ),
-                dbc.ButtonGroup(
-                    [
-                        dbc.Button("Previous image", id="previous", outline=True),
-                        dbc.Button("Next image", id="next", outline=True),
-                    ],
-                    size="lg",
-                    style={"width": "100%"},
-                ),
             ]
         ),
     ], style={}
@@ -415,76 +403,88 @@ app.layout = dbc.Container(
 
 
 @app.callback(
-    Output("mamm", "figure"),
-    [Input('preview', 'clickData')],
-)
-def show_lesion_patch(click_data):
-    cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
-    if cbcontext == 'preview.clickData':
-        _, y_start, x_start = os.path.basename(lesion_fs[0]).split('.png')[0].split('_')
-        x_start, y_start = int(x_start) * data_res, int(y_start) * data_res
-        x_end, y_end = x_start + data_res, y_start + data_res
-
-        fig = px.imshow(io.imread(dft_mamm), binary_string=True)
-        fig.update_layout(
-            margin=dict(l=0, r=0, b=0, t=0, pad=0),
-            shapes=[
-                dict(type="rect", xref="x", yref='y',
-                     x0=x_start, y0=y_start, x1=x_end, y1=y_end, line_color="yellow", line_width=1),
-            ]
-        )
-        fig.update_xaxes(showticklabels=False)
-        fig.update_yaxes(showticklabels=False)
-        return fig
-
-    else:
-        return dash.no_update
-
-
-@app.callback(
-    [Output("image_files", "data"), Output("patch", "figure")],
+    [Output("image_files", "data"),
+     Output("mamm", "figure"), Output('preview', 'figure'), Output('result', 'children'),
+     Output('patch', 'figure')],
     [
-        Input("previous", "n_clicks"),
-        Input("next", "n_clicks"),
+        Input("previous_m", "n_clicks"),
+        Input("next_m", "n_clicks"),
+        Input('preview', 'clickData')
     ],
     State("image_files", "data"),
 )
 def browse_image(
         previous_n_clicks,
         next_n_clicks,
+        click_data,
         image_files_data,
 ):
     cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
     image_index_change = 0
-    if cbcontext == "previous.n_clicks":
+    if cbcontext == "previous_m.n_clicks":
         image_index_change = -1
-    if cbcontext == "next.n_clicks":
+    if cbcontext == "next_m.n_clicks":
         image_index_change = 1
     image_files_data["current"] += image_index_change
     image_files_data["current"] %= len(image_files_data["files"])
     if image_index_change != 0:
-        filename = '.' + image_files_data["files"][image_files_data["current"]]['patch_dir']
-        img = io.imread(filename)
+        filename = '.' + image_files_data["files"][image_files_data["current"]]['imaging_dir']
+        cropped_img, lesion_fs = whole_image_inference(filename, data_res, model, transform)
 
-        input_img = transform(Image.fromarray(img))
-        output = model(input_img.unsqueeze(1).to(device))
-        prob = F.softmax(output, dim=1)
-        pred = torch.argmax(prob, dim=1)
+        img_row = pad_img_row(lesion_fs, data_res)
 
-        labels = ['normal', 'lesion']
-        title = f'{labels[pred.item()]}: {round(torch.max(prob[0]).item(), 3)}'
+        preview = px.imshow(img_row, binary_string=True)
+        preview.update_layout(**preview_layout)
+        preview.update_xaxes(visible=False)
+        preview.update_yaxes(visible=False)
 
-        fig = px.imshow(img, binary_string=True)
-        patch_viewer_layout['title'] = title
+        fig = px.imshow(cropped_img, binary_string=True)
         fig.update_layout(
-            **patch_viewer_layout
+            **img_viewer_layout
         )
-        fig.update_xaxes(showticklabels=False)
-        fig.update_yaxes(showticklabels=False)
-        return image_files_data, fig
+        fig.update_xaxes(visible=False)
+        fig.update_yaxes(visible=False)
+        return image_files_data, fig, preview, f'{len(lesion_fs)} lesions detected.', dash.no_update
 
-    else:
-        return dash.no_update
+    if cbcontext == "preview.clickData":
+        filename = '.' + image_files_data["files"][image_files_data["current"]]['imaging_dir']
+        cropped_img, lesion_fs = whole_image_inference(filename, data_res, model, transform)
+
+        x = click_data['points'][0]['x']
+        lesion_f_id = x // (data_res + 32)
+
+        patch_f = lesion_fs[lesion_f_id]
+        _, y_start, x_start = os.path.basename(patch_f).split('.png')[0].split('_')
+        x_start, y_start = int(x_start) * data_res, int(y_start) * data_res
+        x_end, y_end = x_start + data_res, y_start + data_res
+
+        fig = px.imshow(cropped_img, binary_string=True)
+        fig.update_layout(
+            shapes=[
+                dict(type="rect", xref="x", yref='y',
+                     x0=x_start, y0=y_start, x1=x_end, y1=y_end, line_color="yellow", line_width=1),
+            ]
+        )
+        fig.update_layout(
+            **img_viewer_layout
+        )
+        fig.update_xaxes(visible=False)
+        fig.update_yaxes(visible=False)
+
+        patch = io.imread(patch_f)
+        im = Image.fromarray(patch)
+        im.save('./data/cur_sel.png')
+        pred, prob = inference(model, patch, transform, device)
+        patch_viewer = px.imshow(patch, binary_string=True)
+        labels = ['normal', 'lesion']
+        title = f'{labels[pred]}: {round(prob, 3)}'
+        patch_viewer_layout['title'] = title
+        patch_viewer.update_layout(**patch_viewer_layout)
+        patch_viewer.update_xaxes(visible=False)
+        patch_viewer.update_yaxes(visible=False)
+        return dash.no_update, fig, dash.no_update, dash.no_update, patch_viewer
+
+    return dash.no_update
 
 
 def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
@@ -496,16 +496,19 @@ def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
 
 
 @app.callback(
-    [Output("unit_ious", 'data'), Output("mask", "figure")],
-    [Input("patch", "relayoutData")],
-    State("image_files", "data"),
+    [Output("unit_ious", 'data'), Output("mask", "figure"), Output('maxact', 'figure')],
+    [Input("patch", "relayoutData"), Input("patch", "figure")],
 )
-def compute_unit_ious(relayout_data, image_files_data):
-    if relayout_data is None or 'shapes' not in relayout_data.keys():
-        return dash.no_update
-    else:
+def compute_unit_ious(relayout_data, patch_figure):
+    cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
+    fname = './data/cur_sel.png'
+    img = transform(Image.open(fname))
+    ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(quantile))
+
+    if cbcontext == 'patch.relayoutData':
+        if relayout_data is None or 'shapes' not in relayout_data.keys():
+            return dash.no_update
         acts = model.retained_layer(default_layer).cpu()
-        ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(quantile))
         masks = [ivsmall.pytorch_mask(acts, (0, u)) for u in range(num_units)]
 
         shapes = relayout_data["shapes"]
@@ -524,27 +527,48 @@ def compute_unit_ious(relayout_data, image_files_data):
         ious = [iou_tensor(mask, torch.from_numpy(gt_mask) > 0) for mask in masks]
 
         max_unit = np.argmax(np.array(ious))
-        fname = '.' + image_files_data["files"][image_files_data["current"]]['patch_dir']
 
-        max_img = transform(Image.open(fname))
-        model(max_img.unsqueeze(1).to(device))
-
-        acts = model.retained_layer(default_layer).cpu()
-        max_np = ivsmall.masked_image(max_img, acts, (0, max_unit))
+        max_np = ivsmall.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
             title=f'unit {max_unit} max iou: {round(max(ious), 2)}', title_x=0.5,
-            margin=dict(l=0, r=0, b=10, t=20, pad=0),
+            margin=dict(l=0, r=0, b=0, t=20, pad=0),
             font=dict(
                 size=8,
             )
         )
-        max_fig.update_xaxes(showticklabels=False)
-        max_fig.update_yaxes(showticklabels=False)
+        max_fig.update_xaxes(visible=False)
+        max_fig.update_yaxes(visible=False)
 
         print('max iou score:', max(ious))
 
-        return ious, max_fig
+        return ious, max_fig, dash.no_update
+
+    elif cbcontext == 'patch.figure':
+        ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset)
+
+        model(img.unsqueeze(1).to(device))
+        acts = model.retained_layer(default_layer)
+        max_acts = acts.view(512, 32*32).max(1)[0].cpu()
+        mask = max_acts > rq.quantiles(quantile)
+        non_zero_ids = torch.nonzero(mask)
+        max_unit = non_zero_ids[np.argmax(max_acts[mask].numpy())].item()
+
+        max_np = ivsmall.masked_image(img, acts, (0, max_unit), percent_level=0.99)
+        max_fig = px.imshow(max_np, binary_string=True)
+        max_fig.update_layout(
+            title=f'max unit activation', title_x=0.5,
+            margin=dict(l=0, r=0, b=0, t=20, pad=0),
+            font=dict(
+                size=8,
+            )
+        )
+        max_fig.update_xaxes(visible=False)
+        max_fig.update_yaxes(visible=False)
+
+        return dash.no_update, dash.no_update, max_fig
+
+    return dash.no_update
 
 
 def px_fig2array(fname=None):
@@ -586,7 +610,6 @@ def update_plot(label, n_click, unit_ious, pca_df):
 
     if 'confirm-label' in changed_id:
         pca_df = pd.DataFrame.from_dict(pca_df)
-        print(pca_df.head())
         cur_labels = np.array(pca_df['label'].tolist())
         cur_ious = np.array(pca_df['iou'].tolist())
         new_ious = np.array(unit_ious)
@@ -608,7 +631,6 @@ def update_plot(label, n_click, unit_ious, pca_df):
         updated_pca_df['label'] = updated_labels
         updated_pca_df['iou'] = updated_ious
         updated_pca_df['unit'] = range(num_units)
-
         fig = px.scatter(updated_pca_df, **pca_plot_args)
         fig.update_layout(**pca_plot_layouts)
         fig.update_xaxes(showticklabels=False, title_text="comp-1")
@@ -626,24 +648,17 @@ def update_plot(label, n_click, unit_ious, pca_df):
         return fig, updated_pca_df.to_dict(), json.dumps(grouped_mean_iou, indent=2)
 
     if 'unit_ious' in changed_id:
-        print('update size')
-        ious = np.array(unit_ious)
-
-        over_op = np.ones(len(ious)) * 10
-        under_op = np.ones(len(ious)) * 5
-
-        ops = np.where(ious > iou_th, over_op, under_op)
-
-        preview_args = pca_plot_args
-        preview_args['size'] = ops
-        preview_args['size_max'] = 10
+        pca_df = pd.DataFrame.from_dict(pca_df)
+        preview_args = pca_plot_args.copy()
+        pca_df['threshold'] = ['over' if i > iou_th else 'under' for i in unit_ious]
+        preview_args['color'] = 'threshold'
 
         fig = px.scatter(pca_df, **preview_args)
         fig.update_layout(**pca_plot_layouts)
         fig.update_xaxes(showticklabels=False, title_text="comp-1")
         fig.update_yaxes(showticklabels=False, title_text="comp-2")
 
-        return fig, pca_df, []
+        return fig, dash.no_update, []
 
     else:
         return dash.no_update

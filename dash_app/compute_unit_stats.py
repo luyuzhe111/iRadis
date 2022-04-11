@@ -14,15 +14,6 @@ from sklearn.manifold import TSNE
 from experiment import dissect_experiment as experiment
 
 
-def inference(model, img, transform, device):
-    input_img = transform(Image.fromarray(img))
-    output = model(input_img.unsqueeze(1).to(device))
-    prob = F.softmax(output, dim=1)
-    pred = torch.argmax(prob, dim=1)
-
-    return pred.item(), torch.max(prob[0]).item()
-
-
 def resfile(resdir, f):
     return os.path.join(resdir, f)
 
