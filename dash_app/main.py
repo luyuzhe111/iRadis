@@ -1,3 +1,4 @@
+import math
 import dash
 from dash.dependencies import Input, Output, State
 from dash import dcc, html
@@ -64,6 +65,7 @@ dataloader = DataLoader(dataset, batch_size=16, num_workers=torch.get_num_thread
 pca_acts = pd.read_csv(f'{ckpt_dir}/pca_acts.csv')
 pca_acts['label'] = 'unknown'
 pca_acts['iou'] = 0
+pca_acts['size'] = [5] * num_units
 pca_acts['unit'] = range(num_units)
 
 # load unit stats
@@ -137,14 +139,12 @@ mask_viewer.update_xaxes(visible=False)
 mask_viewer.update_yaxes(visible=False)
 
 plot_height = 300
-pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5,
+pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size='size', size_max=5,
                      hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
 pca_plot_layouts = dict(
     legend=dict(
-        yanchor='bottom',
-        y=0.01,
+        yanchor='top',
         xanchor="right",
-        x=0.99
     ),
     height=plot_height,
     margin=dict(l=0, r=0, b=0, t=20, pad=0, autoexpand=True),
@@ -342,7 +342,7 @@ unit_vis = dbc.Card(
                                 ),
                                 dcc.Store(
                                     id="pca_df",
-                                    data=pca_acts[['label', 'x', 'y', 'iou', 'unit']].to_dict(),
+                                    data=pca_acts[['label', 'x', 'y', 'iou', 'unit', 'size']].to_dict(),
                                 ),
                                 dcc.Store(
                                     id="unit_ious",
@@ -650,8 +650,10 @@ def update_plot(label, n_click, unit_ious, pca_df):
     if 'unit_ious' in changed_id:
         pca_df = pd.DataFrame.from_dict(pca_df)
         preview_args = pca_plot_args.copy()
-        pca_df['threshold'] = ['over' if i > iou_th else 'under' for i in unit_ious]
-        preview_args['color'] = 'threshold'
+
+        pca_df['size'] = [20 if i > iou_th else 5 for i in unit_ious]
+        pca_df['iou'] = unit_ious
+        preview_args['size_max'] = math.sqrt(max(pca_df['size']) / min(pca_df['size'])) * 5
 
         fig = px.scatter(pca_df, **preview_args)
         fig.update_layout(**pca_plot_layouts)
