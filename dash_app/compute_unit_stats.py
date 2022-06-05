@@ -26,7 +26,7 @@ def load_model(model='vgg16_bn', device=None, data_v='version_0', exp='vgg16_bn'
         model = eval(f'{model}()')
         model.classifier.fc8a = nn.Linear(model.classifier.fc8a.in_features, num_classes)
     
-    model.load_state_dict(torch.load(f'../ckpt/{data_v}/{exp}/best_model.pth', map_location=torch.device(device)))
+    model.load_state_dict(torch.load(f'./ckpt/{data_v}/{exp}/best_model.pth', map_location=torch.device(device)))
     
     model.eval()
     model = nethook.InstrumentedModel(model).eval()
@@ -34,7 +34,7 @@ def load_model(model='vgg16_bn', device=None, data_v='version_0', exp='vgg16_bn'
 
 
 def load_dataset(data_v='version_0', transform=None):
-    test_data = f'../json/{data_v}/test_dev.json'
+    test_data = f'./json/{data_v}/test_dev.json'
     target_dataset = PatchDataset(test_data, transform=transform)
     return target_dataset
 
@@ -53,6 +53,7 @@ def load_topk_imgs(model, dataset, rq, topk, layer, quantile, resdir):
     )
     return unit_images
 
+
 def compute_topk(model, target_dataset, layername, resdir):
     pbar.descnext('topk')
     def compute_image_max(batch, *args):
@@ -66,7 +67,7 @@ def compute_topk(model, target_dataset, layername, resdir):
         return acts
 
     topk = tally.tally_topk(compute_image_max, target_dataset, sample_size=len(target_dataset),
-            batch_size=16, num_workers=0, k=100, pin_memory=True, cachefile=resfile(resdir, 'topk.npz'))
+            batch_size=16, num_workers=0, k=10, pin_memory=True, cachefile=resfile(resdir, 'topk.npz'))
     
     return topk
 

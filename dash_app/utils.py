@@ -62,7 +62,7 @@ def crop_img(img, patch_size, stride, view):
 
 
 def whole_image_inference(fname, data_res, model, transform):
-    cache_dir = os.path.dirname(fname).replace('../patch/version_0/test_data/', './cache/')
+    cache_dir = os.path.dirname(fname).replace('./patch/version_0/', './cache/version_0/')
     os.makedirs(cache_dir, exist_ok=True)
     view_pos = os.path.basename(cache_dir).split('_')[0]
     cropped_img = crop_img(io.imread(fname), data_res, data_res, view_pos)

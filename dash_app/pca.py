@@ -7,8 +7,8 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import json
 
-ckpt_dir = '../ckpt/version_0/vgg16_bn_adam_20220318012236'
-acts = np.load(f'{ckpt_dir}/acts.npy')
+ckpt_dir = 'ckpt/version_0/vgg16_bn_adam_20220420200610'
+acts = np.load(f'{ckpt_dir}/act_embd.npy')
 print(acts.shape)
 
 scaler = StandardScaler()
@@ -18,8 +18,8 @@ pca = PCA(n_components=2)
 acts_pca = pca.fit_transform(scale)
 
 df = pd.DataFrame(acts_pca, columns=['x', 'y'])
-df.to_csv(f'{ckpt_dir}/pca_acts.csv')
-np.save(f'{ckpt_dir}/pca_acts.npy', acts_pca)
+df.to_csv(f'{ckpt_dir}/pca_act_embd.csv')
+np.save(f'{ckpt_dir}/pca_act_embd.npy', acts_pca)
 
 print(pca.explained_variance_ratio_)
 

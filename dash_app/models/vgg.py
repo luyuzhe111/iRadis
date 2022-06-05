@@ -29,7 +29,6 @@ class VGG(nn.Module):
         num_classes: int = 1000,
         init_weights: bool = True,
         config: str = None,
-        grayscale: bool = False
     ) -> None:
         super(VGG, self).__init__()
         self.features = features
@@ -82,9 +81,9 @@ class VGG(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 
-def make_layers(cfg: List[Union[str, int]], batch_norm: bool = False, grayscale: bool = False) -> nn.Sequential:
+def make_layers(cfg: List[Union[str, int]], batch_norm: bool = False) -> nn.Sequential:
     layers: List[nn.Module] = []
-    in_channels = 3 if not grayscale else 1
+    in_channels = 1
     for v in cfg:
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
@@ -112,10 +111,7 @@ cfgs: Dict[str, List[Union[str, int]]] = {
 def _vgg(arch: str, cfg: str, batch_norm: bool, pretrained: bool, progress: bool, **kwargs: Any) -> VGG:
     if pretrained:
         kwargs['init_weights'] = False
-    if 'grayscale' in kwargs.keys():
-        model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm, grayscale=kwargs['grayscale']), config=cfg, **kwargs)
-    else:
-        model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), config=cfg, **kwargs)
+    model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), config=cfg, **kwargs)
     
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch], progress=progress)
@@ -125,7 +121,7 @@ def _vgg(arch: str, cfg: str, batch_norm: bool, pretrained: bool, progress: bool
 
 
 
-def vgg11(pretrained: bool = False, progress: bool = True, tiny: bool = False,**kwargs: Any) -> VGG:
+def vgg11(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VGG:
     r"""VGG 11-layer model (configuration "A") from
     `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_.
 
@@ -133,15 +129,12 @@ def vgg11(pretrained: bool = False, progress: bool = True, tiny: bool = False,**
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    
-    if tiny:
-        return _vgg('vgg11', 'AT', False, pretrained, progress, **kwargs)
     return _vgg('vgg11', 'A', False, pretrained, progress, **kwargs)
 
 
 
 
-def vgg11_bn(pretrained: bool = False, progress: bool = True, tiny: bool = False, **kwargs: Any) -> VGG:
+def vgg11_bn(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VGG:
     r"""VGG 11-layer model (configuration "A") with batch normalization
     `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_.
 
@@ -149,8 +142,6 @@ def vgg11_bn(pretrained: bool = False, progress: bool = True, tiny: bool = False
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    if tiny:
-        return _vgg('vgg11', 'AT', True, pretrained, progress, **kwargs)
     return _vgg('vgg11_bn', 'A', True, pretrained, progress, **kwargs)
 
 
@@ -182,7 +173,7 @@ def vgg13_bn(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
 
 
 
-def vgg16(pretrained: bool = False, progress: bool = True, tiny: bool = False, **kwargs: Any) -> VGG:
+def vgg16(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VGG:
     r"""VGG 16-layer model (configuration "D")
     `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_.
 
@@ -190,14 +181,12 @@ def vgg16(pretrained: bool = False, progress: bool = True, tiny: bool = False, *
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    if tiny:
-        return _vgg('vgg16', 'DT', False, pretrained, progress, **kwargs)
     return _vgg('vgg16', 'D', False, pretrained, progress, **kwargs)
 
 
 
 
-def vgg16_bn(pretrained: bool = False, progress: bool = True, tiny: bool = False, **kwargs: Any) -> VGG:
+def vgg16_bn(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> VGG:
     r"""VGG 16-layer model (configuration "D") with batch normalization
     `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_.
 
@@ -205,8 +194,6 @@ def vgg16_bn(pretrained: bool = False, progress: bool = True, tiny: bool = False
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    if tiny:
-        return _vgg('vgg16_bn', 'DT', False, pretrained, progress, **kwargs)
     return _vgg('vgg16_bn', 'D', True, pretrained, progress, **kwargs)
 
 

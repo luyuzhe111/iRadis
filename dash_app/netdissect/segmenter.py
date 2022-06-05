@@ -1,5 +1,3 @@
-# Usage as a simple differentiable segmenter base class
-
 import os
 import torch
 import numpy
@@ -8,7 +6,6 @@ import glob
 import skimage.morphology
 from collections import OrderedDict
 from . import upsegmodel
-from . import segmodel as segmodel_module
 from .easydict import EasyDict
 from urllib.request import urlretrieve
 

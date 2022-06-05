@@ -95,8 +95,8 @@ def vgg16(*args, tiny=False, **kwargs):
     return model
 
 
-def vgg16_bn(*args, tiny=False, **kwargs):
-    model = vgg.vgg16_bn(*args, tiny=tiny, **kwargs)
+def vgg16_bn(*args, **kwargs):
+    model = vgg.vgg16_bn(*args, **kwargs)
     
     model.features = torch.nn.Sequential(collections.OrderedDict(zip([
         'conv1_1', 'relu1_1', 'bn1_1', 

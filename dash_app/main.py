@@ -34,8 +34,8 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
 
 data_v = 'version_0'
-exp = 'adam_20220318012236'
-ckpt_dir = f'../ckpt/{data_v}/vgg16_bn_{exp}'
+exp = 'adam_20220420200610'
+ckpt_dir = f'./ckpt/{data_v}/vgg16_bn_{exp}'
 data_res = 512
 num_units = 512
 default_layer = 'features.conv5_3'
@@ -56,13 +56,14 @@ iou_th = 0.2
 transform = transforms.Compose([
     transforms.Resize(data_res),
     transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5,), std=(0.5,))
 ])
 
 dataset = load_dataset(data_v=data_v, transform=transform)
 dataset.resolution = data_res
 dataloader = DataLoader(dataset, batch_size=16, num_workers=torch.get_num_threads(), pin_memory=True)
 
-pca_acts = pd.read_csv(f'{ckpt_dir}/pca_acts.csv')
+pca_acts = pd.read_csv(f'{ckpt_dir}/pca_act_embd.csv')
 pca_acts['label'] = 'unknown'
 pca_acts['iou'] = 0
 pca_acts['size'] = [5] * num_units
@@ -77,10 +78,10 @@ topk = compute_topk(model, dataset, default_layer, resdir)
 # load topk imagees
 unit_images = load_topk_imgs(model, dataset, rq, topk, default_layer, quantile, resdir)
 
-with open(f'../json/{data_v}/test_dev.json', 'r') as f:
+with open(f'./json/{data_v}/test_dev.json', 'r') as f:
     test_data = json.load(f)
 
-dft_mamm = '.' + test_data[0]['imaging_dir']
+dft_mamm = test_data[0]['imaging_dir']
 cropped_img, lesion_fs = whole_image_inference(dft_mamm, data_res, model, transform)
 img_height = '450px'
 img_viewer_layout = {
@@ -367,7 +368,10 @@ report = dbc.Card(
         dbc.CardHeader(html.H3("Report")),
         dbc.CardBody(
             [
-                dbc.Col(html.Pre(id='report', style={})) # {"height": '300px', "overflowY": "scroll"}
+                dbc.Col(html.Pre(id='max_report', style={})),
+                html.Hr(),
+                dbc.Col(html.Pre(id='report', style={}))
+
             ]
         ),
     ], style={}
@@ -428,9 +432,8 @@ def browse_image(
     image_files_data["current"] += image_index_change
     image_files_data["current"] %= len(image_files_data["files"])
     if image_index_change != 0:
-        filename = '.' + image_files_data["files"][image_files_data["current"]]['imaging_dir']
+        filename = image_files_data["files"][image_files_data["current"]]['imaging_dir']
         cropped_img, lesion_fs = whole_image_inference(filename, data_res, model, transform)
-
         img_row = pad_img_row(lesion_fs, data_res)
 
         preview = px.imshow(img_row, binary_string=True)
@@ -447,7 +450,7 @@ def browse_image(
         return image_files_data, fig, preview, f'{len(lesion_fs)} lesions detected.', dash.no_update
 
     if cbcontext == "preview.clickData":
-        filename = '.' + image_files_data["files"][image_files_data["current"]]['imaging_dir']
+        filename = image_files_data["files"][image_files_data["current"]]['imaging_dir']
         cropped_img, lesion_fs = whole_image_inference(filename, data_res, model, transform)
 
         x = click_data['points'][0]['x']
@@ -502,6 +505,9 @@ def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
 def compute_unit_ious(relayout_data, patch_figure):
     cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
     fname = './data/cur_sel.png'
+    if not os.path.exists(fname):
+        return dash.no_update
+
     img = transform(Image.open(fname))
     ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(quantile))
 
@@ -547,12 +553,9 @@ def compute_unit_ious(relayout_data, patch_figure):
     elif cbcontext == 'patch.figure':
         ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset)
 
-        model(img.unsqueeze(1).to(device))
         acts = model.retained_layer(default_layer)
         max_acts = acts.view(512, 32*32).max(1)[0].cpu()
-        mask = max_acts > rq.quantiles(quantile)
-        non_zero_ids = torch.nonzero(mask)
-        max_unit = non_zero_ids[np.argmax(max_acts[mask].numpy())].item()
+        max_unit = torch.argmax(max_acts).item()
 
         max_np = ivsmall.masked_image(img, acts, (0, max_unit), percent_level=0.99)
         max_fig = px.imshow(max_np, binary_string=True)
