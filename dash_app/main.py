@@ -103,7 +103,7 @@ preview.update_xaxes(visible=False)
 preview.update_yaxes(visible=False)
 
 place_holder = np.ones((data_res, data_res)) * 255
-patch_height = '200px'
+patch_height = '240px'
 patch_viewer_layout = {
     'title': f'prediction:', 'title_x': 0.5,
     'dragmode': "drawclosedpath",
@@ -139,7 +139,7 @@ mask_viewer.update_layout(**mask_viewer_layout)
 mask_viewer.update_xaxes(visible=False)
 mask_viewer.update_yaxes(visible=False)
 
-plot_height = 300
+plot_height = 355
 pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size='size', size_max=5,
                      hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
 pca_plot_layouts = dict(
@@ -283,7 +283,7 @@ patch_viewer = dbc.Card(
 
 button_height = '35px'
 button_width = '80px'
-blank_width = '120px'
+blank_width = '140px'
 label_unit_utils = html.Div([
     dbc.Row([
         dbc.Col(
@@ -318,8 +318,8 @@ label_unit_utils = html.Div([
                 id='topk',
                 children=[],
                 style={'height': '150px',
-                       "width": '240px',
-                       "margin-top": "45px",
+                       "width": '260px',
+                       "margin-top": "60px",
                        "overflowX": "scroll"}
             ), width=4
         )
@@ -368,8 +368,10 @@ report = dbc.Card(
         dbc.CardHeader(html.H3("Report")),
         dbc.CardBody(
             [
+                html.H5('Max'),
                 dbc.Col(html.Pre(id='max_report', style={})),
                 html.Hr(),
+                html.H5('IoU'),
                 dbc.Col(html.Pre(id='report', style={}))
 
             ]
@@ -509,7 +511,7 @@ def compute_unit_ious(relayout_data, patch_figure):
         return dash.no_update
 
     img = transform(Image.open(fname))
-    ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(quantile))
+    ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, percent_level=0.99)
 
     if cbcontext == 'patch.relayoutData':
         if relayout_data is None or 'shapes' not in relayout_data.keys():
@@ -533,7 +535,6 @@ def compute_unit_ious(relayout_data, patch_figure):
         ious = [iou_tensor(mask, torch.from_numpy(gt_mask) > 0) for mask in masks]
 
         max_unit = np.argmax(np.array(ious))
-
         max_np = ivsmall.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
@@ -551,13 +552,13 @@ def compute_unit_ious(relayout_data, patch_figure):
         return ious, max_fig, dash.no_update
 
     elif cbcontext == 'patch.figure':
-        ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset)
+        ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, percent_level=0.99)
 
         acts = model.retained_layer(default_layer)
         max_acts = acts.view(512, 32*32).max(1)[0].cpu()
         max_unit = torch.argmax(max_acts).item()
 
-        max_np = ivsmall.masked_image(img, acts, (0, max_unit), percent_level=0.99)
+        max_np = ivsmall.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
             title=f'max unit activation', title_x=0.5,
@@ -593,11 +594,20 @@ def show_topk(click_data):
         return dash.no_update
 
     unit = click_data['points'][0]['customdata'][0]
-    print(unit, unit_images[unit].size)
 
     topk_imgs = unit_images[unit]
+
+    ivsmall = imgviz.ImageVisualizer((100, 100), source=dataset, percent_level=0.99)
+    cur_img = transform(Image.open('./data/cur_sel.png'))
+    acts = model.retained_layer(default_layer)
+    masked_cur_img = ivsmall.masked_image(cur_img, acts, (0, unit))
+
+    comb = Image.new("RGB", (640, 100), "white")
+    comb.paste(masked_cur_img, (0, 0))
+    comb.paste(topk_imgs, (120, 0))
+
     tmp_name = './data/topk_tmp.png'
-    topk_imgs.save(tmp_name)
+    comb.save(tmp_name)
 
     topk_base64 = base64.b64encode(open(tmp_name, 'rb').read()).decode('ascii')
     return html.Img(src='data:image/png;base64,{}'.format(topk_base64), style={'height':'85%'})
@@ -633,6 +643,7 @@ def update_plot(label, n_click, unit_ious, pca_df):
         updated_pca_df = pca_df.copy()
         updated_pca_df['label'] = updated_labels
         updated_pca_df['iou'] = updated_ious
+        updated_pca_df['cur_ious'] = new_ious
         updated_pca_df['unit'] = range(num_units)
         fig = px.scatter(updated_pca_df, **pca_plot_args)
         fig.update_layout(**pca_plot_layouts)
@@ -644,7 +655,7 @@ def update_plot(label, n_click, unit_ious, pca_df):
         mean_df = grouped_df.mean().reset_index()
 
         cur_labels = mean_df['label'].tolist()
-        cur_mean_act = mean_df['iou'].tolist()
+        cur_mean_act = mean_df['cur_ious'].tolist()
 
         grouped_mean_iou = {k: {'num':w, 'iou':round(v, 4)} for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
 
