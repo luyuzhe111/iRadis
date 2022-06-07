@@ -25,6 +25,7 @@ import torch
 from torch.utils.data import DataLoader
 from netdissect.easydict import EasyDict
 import plotly.io as pio
+import time
 
 pio.templates.default = "simple_white"
 
@@ -66,6 +67,7 @@ dataloader = DataLoader(dataset, batch_size=16, num_workers=torch.get_num_thread
 pca_acts = pd.read_csv(f'{ckpt_dir}/pca_act_embd.csv')
 pca_acts['label'] = 'unknown'
 pca_acts['iou'] = 0
+pca_acts['cur_acts'] = 0
 pca_acts['size'] = [5] * num_units
 pca_acts['unit'] = range(num_units)
 
@@ -141,7 +143,7 @@ mask_viewer.update_yaxes(visible=False)
 
 plot_height = 355
 pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size='size', size_max=5,
-                     hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': ':.2f'})
+                     hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': False, 'cur_acts': False})
 pca_plot_layouts = dict(
     legend=dict(
         yanchor='top',
@@ -159,7 +161,6 @@ pca_plot.update_yaxes(showticklabels=False, title_text="comp-2")
 
 labels_dropdown = {
     'tissue': 'tissue',
-    'calcification': 'calcification',
     'mass': 'mass'
 }
 
@@ -343,7 +344,7 @@ unit_vis = dbc.Card(
                                 ),
                                 dcc.Store(
                                     id="pca_df",
-                                    data=pca_acts[['label', 'x', 'y', 'iou', 'unit', 'size']].to_dict(),
+                                    data=pca_acts[['label', 'x', 'y', 'cur_acts', 'iou', 'unit', 'size']].to_dict(),
                                 ),
                                 dcc.Store(
                                     id="unit_ious",
@@ -368,11 +369,17 @@ report = dbc.Card(
         dbc.CardHeader(html.H3("Report")),
         dbc.CardBody(
             [
-                html.H5('Max'),
-                dbc.Col(html.Pre(id='max_report', style={})),
+                html.H6('Max'),
+                dbc.Col(html.Pre(id='max_report', style={
+                    'height': '300px',
+                    'overflowY': "scroll"
+                })),
                 html.Hr(),
-                html.H5('IoU'),
-                dbc.Col(html.Pre(id='report', style={}))
+                html.H6('IoU'),
+                dbc.Col(html.Pre(id='report', style={
+                    'height': '305px',
+                    'overflowY': "scroll"
+                }))
 
             ]
         ),
@@ -501,23 +508,38 @@ def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
 
 
 @app.callback(
-    [Output("unit_ious", 'data'), Output("mask", "figure"), Output('maxact', 'figure')],
-    [Input("patch", "relayoutData"), Input("patch", "figure")],
+    [Output("unit_ious", 'data'), Output("mask", "figure"), Output('maxact', 'figure'), Output('max_report', 'children')],
+    [Input("patch", "relayoutData"), Input("patch", "figure"), Input('pca_df', 'data')],
 )
-def compute_unit_ious(relayout_data, patch_figure):
+def compute_unit_ious(relayout_data, patch_figure, pca_df):
     cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
     fname = './data/cur_sel.png'
     if not os.path.exists(fname):
         return dash.no_update
 
     img = transform(Image.open(fname))
-    ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, percent_level=0.99)
+    iv = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(0.99))
 
-    if cbcontext == 'patch.relayoutData':
+    if cbcontext == 'pca_df.data':
+        pca_df = pd.DataFrame.from_dict(pca_df)
+        grouped_df = pca_df.groupby('label')
+        mean_df = grouped_df.mean().reset_index()
+
+        cur_labels = mean_df['label'].tolist()
+        cur_label_count = grouped_df.size().tolist()
+        cur_mean_act = mean_df['cur_acts'].tolist()
+        grouped_mean_act = {k: {'num': w, 'max act': round(v, 4)}
+                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
+
+        return dash.no_update, dash.no_update, dash.no_update, json.dumps(grouped_mean_act, indent=2)
+
+    elif cbcontext == 'patch.relayoutData':
         if relayout_data is None or 'shapes' not in relayout_data.keys():
             return dash.no_update
         acts = model.retained_layer(default_layer).cpu()
-        masks = [ivsmall.pytorch_mask(acts, (0, u)) for u in range(num_units)]
+        t = time.time()
+        masks = [iv.pytorch_mask(acts, (0, u)) for u in range(num_units)]
+        print('compute mask passed:', time.time() - t)
 
         shapes = relayout_data["shapes"]
         image_shape = (data_res, data_res)
@@ -532,10 +554,12 @@ def compute_unit_ious(relayout_data, patch_figure):
         gt_mask = np.zeros(image_shape)
         cv2.fillPoly(gt_mask, pts=[contours[0]], color=(1, 1))
 
+        t = time.time()
         ious = [iou_tensor(mask, torch.from_numpy(gt_mask) > 0) for mask in masks]
+        print('compute iou passed:', time.time() - t)
 
         max_unit = np.argmax(np.array(ious))
-        max_np = ivsmall.masked_image(img, acts, (0, max_unit))
+        max_np = iv.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
             title=f'unit {max_unit} max iou: {round(max(ious), 2)}', title_x=0.5,
@@ -549,16 +573,16 @@ def compute_unit_ious(relayout_data, patch_figure):
 
         print('max iou score:', max(ious))
 
-        return ious, max_fig, dash.no_update
+        return ious, max_fig, dash.no_update, dash.no_update
 
     elif cbcontext == 'patch.figure':
-        ivsmall = imgviz.ImageVisualizer((data_res, data_res), source=dataset, percent_level=0.99)
+        iv = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(0.99))
 
         acts = model.retained_layer(default_layer)
         max_acts = acts.view(512, 32*32).max(1)[0].cpu()
         max_unit = torch.argmax(max_acts).item()
 
-        max_np = ivsmall.masked_image(img, acts, (0, max_unit))
+        max_np = iv.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
             title=f'max unit activation', title_x=0.5,
@@ -570,7 +594,18 @@ def compute_unit_ious(relayout_data, patch_figure):
         max_fig.update_xaxes(visible=False)
         max_fig.update_yaxes(visible=False)
 
-        return dash.no_update, dash.no_update, max_fig
+        pca_df = pd.DataFrame.from_dict(pca_df)
+        pca_df['cur_acts'] = max_acts
+        grouped_df = pca_df.groupby('label')
+        mean_df = grouped_df.mean().reset_index()
+
+        cur_labels = mean_df['label'].tolist()
+        cur_label_count = grouped_df.size().tolist()
+        cur_mean_act = mean_df['cur_acts'].tolist()
+        grouped_mean_act = {k: {'num': w, 'max act': round(v, 4)}
+                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
+
+        return dash.no_update, dash.no_update, max_fig, json.dumps(grouped_mean_act, indent=2)
 
     return dash.no_update
 
@@ -597,7 +632,7 @@ def show_topk(click_data):
 
     topk_imgs = unit_images[unit]
 
-    ivsmall = imgviz.ImageVisualizer((100, 100), source=dataset, percent_level=0.99)
+    ivsmall = imgviz.ImageVisualizer((100, 100), source=dataset, quantiles=rq, level=rq.quantiles(0.99))
     cur_img = transform(Image.open('./data/cur_sel.png'))
     acts = model.retained_layer(default_layer)
     masked_cur_img = ivsmall.masked_image(cur_img, acts, (0, unit))
@@ -645,6 +680,11 @@ def update_plot(label, n_click, unit_ious, pca_df):
         updated_pca_df['iou'] = updated_ious
         updated_pca_df['cur_ious'] = new_ious
         updated_pca_df['unit'] = range(num_units)
+
+        acts = model.retained_layer(default_layer)
+        max_acts = acts.view(512, 32 * 32).max(1)[0].cpu()
+        updated_pca_df['cur_acts'] = max_acts
+
         fig = px.scatter(updated_pca_df, **pca_plot_args)
         fig.update_layout(**pca_plot_layouts)
         fig.update_xaxes(showticklabels=False, title_text="comp-1")
@@ -655,9 +695,9 @@ def update_plot(label, n_click, unit_ious, pca_df):
         mean_df = grouped_df.mean().reset_index()
 
         cur_labels = mean_df['label'].tolist()
-        cur_mean_act = mean_df['cur_ious'].tolist()
+        cur_mean_iou = mean_df['cur_ious'].tolist()
 
-        grouped_mean_iou = {k: {'num':w, 'iou':round(v, 4)} for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
+        grouped_mean_iou = {k: {'num':w, 'iou':round(v, 4)} for k, v, w in zip(cur_labels, cur_mean_iou, cur_label_count)}
 
         return fig, updated_pca_df.to_dict(), json.dumps(grouped_mean_iou, indent=2)
 
