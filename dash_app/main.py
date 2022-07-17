@@ -129,6 +129,26 @@ max_act_viewer.update_layout(**max_act_viewer_layout)
 max_act_viewer.update_xaxes(visible=False)
 max_act_viewer.update_yaxes(visible=False)
 
+max_act_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='max_act', y='label')
+max_act_dist_layout = {
+    'margin': dict(l=15, r=0, b=15, t=10, pad=0, autoexpand=False),
+    'height': 187,
+}
+max_act_dist_x_layout = {
+    'title': '', 'ticks': '', 'showticklabels': False, 'showline': False
+}
+max_act_dist_y_layout = {
+    'title': '', 'ticks': '', 'tickfont_size': 8, 'tickangle': 270, 'showticklabels': True
+}
+max_act_dist.update_layout(**max_act_dist_layout)
+max_act_dist.update_xaxes(visible=False)
+max_act_dist.update_yaxes(visible=False)
+
+max_count_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='num', y='label')
+max_count_dist.update_layout(**max_act_dist_layout)
+max_count_dist.update_xaxes(max_act_dist_x_layout)
+max_count_dist.update_yaxes(max_act_dist_y_layout)
+
 mask_height = patch_height
 mask_viewer_layout = {
     'title': f'unit with max iou: ', 'title_x': 0.5,
@@ -369,18 +389,32 @@ report = dbc.Card(
         dbc.CardHeader(html.H3("Report")),
         dbc.CardBody(
             [
+                html.H6('Count'),
+                dbc.Col(
+                    dcc.Graph(
+                        id="count_report",
+                        figure=max_count_dist,
+                        config={'displayModeBar': False},
+                    ),
+                ),
+                html.Hr(),
                 html.H6('Max'),
-                dbc.Col(html.Pre(id='max_report', style={
-                    'height': '300px',
-                    'overflowY': "scroll"
-                })),
+                dbc.Col(
+                    dcc.Graph(
+                        id="max_report",
+                        figure=max_act_dist,
+                        config={'displayModeBar': False},
+                    ),
+                ),
                 html.Hr(),
                 html.H6('IoU'),
-                dbc.Col(html.Pre(id='report', style={
-                    'height': '305px',
-                    'overflowY': "scroll"
-                }))
-
+                dbc.Col(
+                    dcc.Graph(
+                        id="report",
+                        figure=max_act_dist,
+                        config={'displayModeBar': False},
+                    ),
+                ),
             ]
         ),
     ], style={}
@@ -508,7 +542,7 @@ def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
 
 
 @app.callback(
-    [Output("unit_ious", 'data'), Output("mask", "figure"), Output('maxact', 'figure'), Output('max_report', 'children')],
+    [Output("unit_ious", 'data'), Output("mask", "figure"), Output('maxact', 'figure'), Output('max_report', 'figure')],
     [Input("patch", "relayoutData"), Input("patch", "figure"), Input('pca_df', 'data')],
 )
 def compute_unit_ious(relayout_data, patch_figure, pca_df):
@@ -528,10 +562,16 @@ def compute_unit_ious(relayout_data, patch_figure, pca_df):
         cur_labels = mean_df['label'].tolist()
         cur_label_count = grouped_df.size().tolist()
         cur_mean_act = mean_df['cur_acts'].tolist()
-        grouped_mean_act = {k: {'num': w, 'max act': round(v, 4)}
-                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
+        grouped_mean_act = [{'label':k, 'num': w, 'max act': round(v, 2)}
+                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)]
 
-        return dash.no_update, dash.no_update, dash.no_update, json.dumps(grouped_mean_act, indent=2)
+        print(pd.DataFrame(grouped_mean_act))
+        bar = px.bar(pd.DataFrame(grouped_mean_act), x='max act', y='label')
+        bar.update_layout(**max_act_dist_layout)
+        bar.update_xaxes(**max_act_dist_x_layout)
+        bar.update_yaxes(**max_act_dist_y_layout)
+
+        return dash.no_update, dash.no_update, dash.no_update, bar
 
     elif cbcontext == 'patch.relayoutData':
         if relayout_data is None or 'shapes' not in relayout_data.keys():
@@ -602,10 +642,16 @@ def compute_unit_ious(relayout_data, patch_figure, pca_df):
         cur_labels = mean_df['label'].tolist()
         cur_label_count = grouped_df.size().tolist()
         cur_mean_act = mean_df['cur_acts'].tolist()
-        grouped_mean_act = {k: {'num': w, 'max act': round(v, 4)}
-                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)}
+        grouped_mean_act = [{'label': k, 'num': w, 'max act': round(v, 2)}
+                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)]
 
-        return dash.no_update, dash.no_update, max_fig, json.dumps(grouped_mean_act, indent=2)
+        print(pd.DataFrame(grouped_mean_act))
+        bar = px.bar(pd.DataFrame(grouped_mean_act), x='max act', y='label')
+        bar.update_layout(**max_act_dist_layout)
+        bar.update_xaxes(**max_act_dist_x_layout)
+        bar.update_yaxes(**max_act_dist_y_layout)
+
+        return dash.no_update, dash.no_update, max_fig, bar
 
     return dash.no_update
 
@@ -648,7 +694,7 @@ def show_topk(click_data):
     return html.Img(src='data:image/png;base64,{}'.format(topk_base64), style={'height':'85%'})
 
 @app.callback(
-    [Output("scatter", 'figure'), Output("pca_df", 'data'),  Output('report', 'children')],
+    [Output("scatter", 'figure'), Output("pca_df", 'data'),  Output('report', 'figure'),  Output('count_report', 'figure')],
     [Input("label-dropdown", "value"), Input('confirm-label', 'n_clicks'), Input("unit_ious", 'data')],
     [State("pca_df", 'data')]
 )
@@ -697,9 +743,23 @@ def update_plot(label, n_click, unit_ious, pca_df):
         cur_labels = mean_df['label'].tolist()
         cur_mean_iou = mean_df['cur_ious'].tolist()
 
-        grouped_mean_iou = {k: {'num':w, 'iou':round(v, 4)} for k, v, w in zip(cur_labels, cur_mean_iou, cur_label_count)}
+        grouped_mean_iou = [{'label': k, 'num': w, 'iou': round(v, 2)}
+                            for k, v, w in zip(cur_labels, cur_mean_iou, cur_label_count)]
 
-        return fig, updated_pca_df.to_dict(), json.dumps(grouped_mean_iou, indent=2)
+        df = pd.DataFrame(grouped_mean_iou)
+        print(df)
+
+        bar = px.bar(df, x='iou', y='label')
+        bar.update_layout(**max_act_dist_layout)
+        bar.update_xaxes(**max_act_dist_x_layout)
+        bar.update_yaxes(**max_act_dist_y_layout)
+
+        count = px.bar(df, x='num', y='label')
+        count.update_layout(**max_act_dist_layout)
+        count.update_xaxes(**max_act_dist_x_layout)
+        count.update_yaxes(**max_act_dist_y_layout)
+
+        return fig, updated_pca_df.to_dict(), bar, count
 
     if 'unit_ious' in changed_id:
         pca_df = pd.DataFrame.from_dict(pca_df)
@@ -714,7 +774,7 @@ def update_plot(label, n_click, unit_ious, pca_df):
         fig.update_xaxes(showticklabels=False, title_text="comp-1")
         fig.update_yaxes(showticklabels=False, title_text="comp-2")
 
-        return fig, dash.no_update, []
+        return fig, dash.no_update, dash.no_update, dash.no_update
 
     else:
         return dash.no_update
