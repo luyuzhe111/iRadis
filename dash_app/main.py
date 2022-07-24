@@ -18,7 +18,7 @@ from compute_unit_stats import (
     load_model, load_dataset, compute_rq, compute_topk, load_topk_imgs
 )
 from utils import (
-    inference, whole_image_inference, pad_img_row
+    inference, whole_image_inference, pad_img_row, assign_colors, group_by_label
 )
 from torchvision import transforms
 import torch
@@ -129,13 +129,13 @@ max_act_viewer.update_layout(**max_act_viewer_layout)
 max_act_viewer.update_xaxes(visible=False)
 max_act_viewer.update_yaxes(visible=False)
 
-max_act_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='max_act', y='label')
+max_act_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='max_act', y='label', color='label')
 max_act_dist_layout = {
     'margin': dict(l=15, r=0, b=15, t=10, pad=0, autoexpand=False),
     'height': 187,
 }
 max_act_dist_x_layout = {
-    'title': '', 'ticks': '', 'showticklabels': False, 'showline': False
+    'title': '', 'ticks': '', 'showticklabels': False, 'showline': False, 'side': 'top',
 }
 max_act_dist_y_layout = {
     'title': '', 'ticks': '', 'tickfont_size': 8, 'tickangle': 270, 'showticklabels': True
@@ -144,7 +144,8 @@ max_act_dist.update_layout(**max_act_dist_layout)
 max_act_dist.update_xaxes(visible=False)
 max_act_dist.update_yaxes(visible=False)
 
-max_count_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='num', y='label')
+max_count_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]),
+                        x='num', y='label', color='label', opacity=0.5)
 max_count_dist.update_layout(**max_act_dist_layout)
 max_count_dist.update_xaxes(max_act_dist_x_layout)
 max_count_dist.update_yaxes(max_act_dist_y_layout)
@@ -545,7 +546,7 @@ def iou_tensor(candidate: torch.Tensor, example: torch.Tensor):
     [Output("unit_ious", 'data'), Output("mask", "figure"), Output('maxact', 'figure'), Output('max_report', 'figure')],
     [Input("patch", "relayoutData"), Input("patch", "figure"), Input('pca_df', 'data')],
 )
-def compute_unit_ious(relayout_data, patch_figure, pca_df):
+def compute_unit_ious(relayout_data, patch_figure, pca_data):
     cbcontext = [p["prop_id"] for p in dash.callback_context.triggered][0]
     fname = './data/cur_sel.png'
     if not os.path.exists(fname):
@@ -555,21 +556,13 @@ def compute_unit_ious(relayout_data, patch_figure, pca_df):
     iv = imgviz.ImageVisualizer((data_res, data_res), source=dataset, quantiles=rq, level=rq.quantiles(0.99))
 
     if cbcontext == 'pca_df.data':
-        pca_df = pd.DataFrame.from_dict(pca_df)
-        grouped_df = pca_df.groupby('label')
-        mean_df = grouped_df.mean().reset_index()
-
-        cur_labels = mean_df['label'].tolist()
-        cur_label_count = grouped_df.size().tolist()
-        cur_mean_act = mean_df['cur_acts'].tolist()
-        grouped_mean_act = [{'label':k, 'num': w, 'max act': round(v, 2)}
-                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)]
-
-        print(pd.DataFrame(grouped_mean_act))
-        bar = px.bar(pd.DataFrame(grouped_mean_act), x='max act', y='label')
+        pca_df = pd.DataFrame.from_dict(pca_data)
+        grouped_df = group_by_label(pca_df)
+        color_map = assign_colors(pca_df['label'].unique(), px.colors.qualitative.D3)
+        bar = px.bar(grouped_df, x='max act', y='label', color='label', opacity=0.5, color_discrete_map=color_map)
         bar.update_layout(**max_act_dist_layout)
         bar.update_xaxes(**max_act_dist_x_layout)
-        bar.update_yaxes(**max_act_dist_y_layout)
+        bar.update_yaxes(**max_act_dist_y_layout, categoryorder='array', categoryarray=pca_df['label'].unique())
 
         return dash.no_update, dash.no_update, dash.no_update, bar
 
@@ -634,22 +627,14 @@ def compute_unit_ious(relayout_data, patch_figure, pca_df):
         max_fig.update_xaxes(visible=False)
         max_fig.update_yaxes(visible=False)
 
-        pca_df = pd.DataFrame.from_dict(pca_df)
+        pca_df = pd.DataFrame.from_dict(pca_data)
         pca_df['cur_acts'] = max_acts
-        grouped_df = pca_df.groupby('label')
-        mean_df = grouped_df.mean().reset_index()
-
-        cur_labels = mean_df['label'].tolist()
-        cur_label_count = grouped_df.size().tolist()
-        cur_mean_act = mean_df['cur_acts'].tolist()
-        grouped_mean_act = [{'label': k, 'num': w, 'max act': round(v, 2)}
-                            for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)]
-
-        print(pd.DataFrame(grouped_mean_act))
-        bar = px.bar(pd.DataFrame(grouped_mean_act), x='max act', y='label')
+        grouped_df = group_by_label(pca_df)
+        color_map = assign_colors(pca_df['label'].unique(), px.colors.qualitative.D3)
+        bar = px.bar(grouped_df, x='max act', y='label', color='label', opacity=0.5, color_discrete_map=color_map)
         bar.update_layout(**max_act_dist_layout)
         bar.update_xaxes(**max_act_dist_x_layout)
-        bar.update_yaxes(**max_act_dist_y_layout)
+        bar.update_yaxes(**max_act_dist_y_layout, categoryorder='array', categoryarray=pca_df['label'].unique())
 
         return dash.no_update, dash.no_update, max_fig, bar
 
@@ -704,6 +689,7 @@ def update_plot(label, n_click, unit_ious, pca_df):
 
     if 'confirm-label' in changed_id:
         pca_df = pd.DataFrame.from_dict(pca_df)
+        label_order = pca_df['label'].unique().tolist()
         cur_labels = np.array(pca_df['label'].tolist())
         cur_ious = np.array(pca_df['iou'].tolist())
         new_ious = np.array(unit_ious)
@@ -726,10 +712,21 @@ def update_plot(label, n_click, unit_ious, pca_df):
         updated_pca_df['iou'] = updated_ious
         updated_pca_df['cur_ious'] = new_ious
         updated_pca_df['unit'] = range(num_units)
+        label_order = label_order + [label]
 
         acts = model.retained_layer(default_layer)
         max_acts = acts.view(512, 32 * 32).max(1)[0].cpu()
         updated_pca_df['cur_acts'] = max_acts
+
+        # recorder dataframe by the order labels were added by the user
+        def order_df(df_input, order_by, order):
+            df_output = pd.DataFrame()
+            for var in order:
+                df_append = df_input[df_input[order_by] == var].copy()
+                df_output = pd.concat([df_output, df_append])
+            return df_output
+
+        updated_pca_df = order_df(df_input=updated_pca_df, order_by='label', order=label_order)
 
         fig = px.scatter(updated_pca_df, **pca_plot_args)
         fig.update_layout(**pca_plot_layouts)
@@ -747,19 +744,18 @@ def update_plot(label, n_click, unit_ious, pca_df):
                             for k, v, w in zip(cur_labels, cur_mean_iou, cur_label_count)]
 
         df = pd.DataFrame(grouped_mean_iou)
-        print(df)
-
-        bar = px.bar(df, x='iou', y='label')
+        color_map = assign_colors(label_order, px.colors.qualitative.D3)
+        bar = px.bar(df, x='iou', y='label', color='label', opacity=0.5, color_discrete_map=color_map)
         bar.update_layout(**max_act_dist_layout)
         bar.update_xaxes(**max_act_dist_x_layout)
-        bar.update_yaxes(**max_act_dist_y_layout)
+        bar.update_yaxes(**max_act_dist_y_layout, categoryorder='array', categoryarray=label_order)
 
-        count = px.bar(df, x='num', y='label')
+        count = px.bar(df, x='num', y='label', color='label', opacity=0.5, color_discrete_map=color_map)
         count.update_layout(**max_act_dist_layout)
         count.update_xaxes(**max_act_dist_x_layout)
-        count.update_yaxes(**max_act_dist_y_layout)
+        count.update_yaxes(**max_act_dist_y_layout, categoryorder='array', categoryarray=label_order)
 
-        return fig, updated_pca_df.to_dict(), bar, count
+        return fig, updated_pca_df.to_dict('records'), bar, count
 
     if 'unit_ious' in changed_id:
         pca_df = pd.DataFrame.from_dict(pca_df)

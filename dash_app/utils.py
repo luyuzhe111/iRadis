@@ -6,8 +6,30 @@ import json
 from skimage.util import view_as_blocks
 import torch
 import numpy as np
+import pandas as pd
 from PIL import Image
 import torch.nn.functional as F
+
+
+def assign_colors(labels, palette):
+    color_map = {}
+    for i, l in enumerate(labels):
+        color_map[l] = palette[i]
+    return color_map
+
+
+def group_by_label(df_in):
+    grouped_df = df_in.copy().groupby('label')
+    mean_df = grouped_df.mean().reset_index()
+
+    cur_labels = mean_df['label'].tolist()
+    cur_label_count = grouped_df.size().tolist()
+    cur_mean_act = mean_df['cur_acts'].tolist()
+    grouped_mean_act = [{'label': k, 'num': w, 'max act': round(v, 2)}
+                        for k, v, w in zip(cur_labels, cur_mean_act, cur_label_count)]
+
+    grouped_mean_act_df = pd.DataFrame(grouped_mean_act)
+    return grouped_mean_act_df
 
 
 def pad_img_row(lesion_fs, data_res):
