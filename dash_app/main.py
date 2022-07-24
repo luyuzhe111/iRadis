@@ -120,7 +120,7 @@ patch_viewer.update_yaxes(visible=False)
 
 max_act_height = patch_height
 max_act_viewer_layout = {
-    'title': f'max unit activation:', 'title_x': 0.5,
+    'title': f'max value:', 'title_x': 0.5,
     'margin': dict(l=0, r=0, b=0, t=20, pad=0),
     'font': dict(size=8)
 }
@@ -152,7 +152,7 @@ max_count_dist.update_yaxes(max_act_dist_y_layout)
 
 mask_height = patch_height
 mask_viewer_layout = {
-    'title': f'unit with max iou: ', 'title_x': 0.5,
+    'title': f'max iou: ', 'title_x': 0.5,
     'margin': dict(l=0, r=0, b=0, t=20, pad=0),
     'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
     'font': dict(size=8)
@@ -390,7 +390,7 @@ report = dbc.Card(
         dbc.CardHeader(html.H3("Report")),
         dbc.CardBody(
             [
-                html.H6('Count'),
+                html.H6('unit distribution'),
                 dbc.Col(
                     dcc.Graph(
                         id="count_report",
@@ -399,7 +399,7 @@ report = dbc.Card(
                     ),
                 ),
                 html.Hr(),
-                html.H6('Max'),
+                html.H6('activation value'),
                 dbc.Col(
                     dcc.Graph(
                         id="max_report",
@@ -408,7 +408,7 @@ report = dbc.Card(
                     ),
                 ),
                 html.Hr(),
-                html.H6('IoU'),
+                html.H6('activation area'),
                 dbc.Col(
                     dcc.Graph(
                         id="report",
@@ -595,7 +595,7 @@ def compute_unit_ious(relayout_data, patch_figure, pca_data):
         max_np = iv.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
-            title=f'unit {max_unit} max iou: {round(max(ious), 2)}', title_x=0.5,
+            title=f'unit {max_unit} | max iou: {round(max(ious), 2)}', title_x=0.5,
             margin=dict(l=0, r=0, b=0, t=20, pad=0),
             font=dict(
                 size=8,
@@ -618,7 +618,7 @@ def compute_unit_ious(relayout_data, patch_figure, pca_data):
         max_np = iv.masked_image(img, acts, (0, max_unit))
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
-            title=f'max unit activation', title_x=0.5,
+            title=f'max value', title_x=0.5,
             margin=dict(l=0, r=0, b=0, t=20, pad=0),
             font=dict(
                 size=8,
