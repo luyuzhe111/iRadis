@@ -712,7 +712,8 @@ def update_plot(label, n_click, unit_ious, pca_df):
         updated_pca_df['iou'] = updated_ious
         updated_pca_df['cur_ious'] = new_ious
         updated_pca_df['unit'] = range(num_units)
-        label_order = label_order + [label]
+        if label not in label_order:
+            label_order = label_order + [label]
 
         acts = model.retained_layer(default_layer)
         max_acts = acts.view(512, 32 * 32).max(1)[0].cpu()
