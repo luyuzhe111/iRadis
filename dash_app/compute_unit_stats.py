@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from models.vgg_old import vgg11, vgg16, vgg16_bn
 from tqdm import tqdm
 import os
 from data_utils import PatchDataset

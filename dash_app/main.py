@@ -309,16 +309,16 @@ blank_width = '140px'
 label_unit_utils = html.Div([
     dbc.Row([
         dbc.Col(
-            dcc.Input(id='input', value='', style={'height': button_height, 'width': blank_width})
+            [dcc.Input(id='input', value='', style={'height': button_height, 'width': blank_width})], width=7
         ),
 
         dbc.Col(
-            html.Button('add', id='submit', style={'height': button_height, 'width': button_width})
+            [html.Button('add', id='submit', style={'height': button_height, 'width': button_width})], width=5
         ),
     ], style={"margin-bottom": "15px", "margin-top": "10px"}),
 
     dbc.Row([
-        dbc.Col(
+        dbc.Col([
             dcc.Dropdown(
                 id="label-dropdown",
                 options=[
@@ -328,10 +328,10 @@ label_unit_utils = html.Div([
                 clearable=False,
                 style={'height': button_height, 'width': blank_width}
             )
-        ),
-        dbc.Col(
+        ], width=7),
+        dbc.Col([
             html.Button("update", id="confirm-label", style={'height': button_height, 'width': button_width})
-        )
+        ], width=5)
     ]),
 
     dbc.Row([
@@ -346,8 +346,8 @@ label_unit_utils = html.Div([
             ), width=4
         )
     ])
-], style={'display': 'inline-block'})
-
+])
+# , style={'display': 'inline-block'}
 
 unit_vis = dbc.Card(
     children=[
