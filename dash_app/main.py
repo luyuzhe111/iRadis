@@ -29,7 +29,7 @@ import time
 
 pio.templates.default = "simple_white"
 
-external_stylesheets = [dbc.themes.BOOTSTRAP, "assets/image_annotation_style.css"]
+external_stylesheets = [dbc.themes.BOOTSTRAP, "assets/style.css"]
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
@@ -795,4 +795,4 @@ def update_label_dropdown(new_value, new_submission, current_options):
 
 
 if __name__ == '__main__':
-    app.run_server(host='0.0.0.0', port=8050)
+    app.run_server()

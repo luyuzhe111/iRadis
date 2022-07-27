@@ -1,17 +1,12 @@
 import torch
 import torch.nn as nn
-from models.vgg_old import vgg11, vgg16, vgg16_bn
 from tqdm import tqdm
-from torchvision import transforms
-import torch.nn.functional as F
-from PIL import Image
 import os
 from data_utils import PatchDataset
 import numpy as np
 from netdissect import nethook, imgviz
 from netdissect import pbar, tally
 from sklearn.manifold import TSNE
-from experiment import dissect_experiment as experiment
 
 
 def resfile(resdir, f):
@@ -74,15 +69,13 @@ def compute_topk(model, target_dataset, layername, resdir):
 
 def compute_rq(model, target_dataset, layername, resdir, args):
     pbar.descnext('rq')
-    upfn = experiment.make_upfn(args, target_dataset, model, layername)
     def compute_samples(batch, *args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         image_batch = batch.to(device)
         _ = model(image_batch)
         acts = model.retained_layer(layername)
 
-        hacts = upfn(acts)
-        return hacts.permute(0, 2, 3, 1).contiguous().view(-1, acts.shape[1])
+        return acts.permute(0, 2, 3, 1).contiguous().view(-1, acts.shape[1])
 
     rq = tally.tally_quantile(compute_samples, target_dataset,
                               sample_size=len(target_dataset),
