@@ -34,6 +34,8 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 server = app.server
 
+os.chdir('dash_app')
+
 data_v = 'version_0'
 exp = 'adam_20220420200610'
 ckpt_dir = f'./ckpt/{data_v}/vgg16_bn_{exp}'
@@ -85,7 +87,7 @@ with open(f'./json/{data_v}/test_dev.json', 'r') as f:
 
 dft_mamm = test_data[0]['imaging_dir']
 cropped_img, lesion_fs = whole_image_inference(dft_mamm, data_res, model, transform)
-img_height = '450px'
+img_height = '405px'
 img_viewer_layout = {
     'margin': dict(l=0, r=0, b=20, t=0, pad=0),
 }
@@ -132,7 +134,7 @@ max_act_viewer.update_yaxes(visible=False)
 max_act_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='max_act', y='label', color='label')
 max_act_dist_layout = {
     'margin': dict(l=15, r=0, b=15, t=10, pad=0, autoexpand=False),
-    'height': 187,
+    'height': 172,
 }
 max_act_dist_x_layout = {
     'title': '', 'ticks': '', 'showticklabels': False, 'showline': False, 'side': 'top',
@@ -162,7 +164,7 @@ mask_viewer.update_layout(**mask_viewer_layout)
 mask_viewer.update_xaxes(visible=False)
 mask_viewer.update_yaxes(visible=False)
 
-plot_height = 355
+plot_height = 310
 pca_plot_args = dict(x='x', y='y', color="label", opacity=0.5, size='size', size_max=5,
                      hover_data={'unit': True, 'label': True, 'x': False, 'y': False, 'iou': False, 'cur_acts': False})
 pca_plot_layouts = dict(
@@ -305,7 +307,7 @@ patch_viewer = dbc.Card(
 
 button_height = '35px'
 button_width = '80px'
-blank_width = '140px'
+blank_width = '120px'
 label_unit_utils = html.Div([
     dbc.Row([
         dbc.Col(
@@ -347,7 +349,6 @@ label_unit_utils = html.Div([
         )
     ])
 ])
-# , style={'display': 'inline-block'}
 
 unit_vis = dbc.Card(
     children=[
