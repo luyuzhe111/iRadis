@@ -108,12 +108,14 @@ preview.update_yaxes(visible=False)
 
 place_holder = np.ones((data_res, data_res)) * 255
 patch_height = '240px'
+text_size = 11
+top_pad = 30
 patch_viewer_layout = {
     'title': f'prediction:', 'title_x': 0.5,
     'dragmode': "drawclosedpath",
-    'margin': dict(l=0, r=0, b=0, t=20, pad=0),
+    'margin': dict(l=0, r=0, b=0, t=top_pad, pad=0),
     'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
-    'font': dict(size=8)
+    'font': dict(size=text_size)
 }
 patch_viewer = px.imshow(place_holder, binary_string=True)
 patch_viewer.update_layout(**patch_viewer_layout)
@@ -123,8 +125,8 @@ patch_viewer.update_yaxes(visible=False)
 max_act_height = patch_height
 max_act_viewer_layout = {
     'title': f'max value:', 'title_x': 0.5,
-    'margin': dict(l=0, r=0, b=0, t=20, pad=0),
-    'font': dict(size=8)
+    'margin': dict(l=0, r=0, b=0, t=top_pad, pad=0),
+    'font': dict(size=text_size)
 }
 max_act_viewer = px.imshow(place_holder, binary_string=True)
 max_act_viewer.update_layout(**max_act_viewer_layout)
@@ -134,13 +136,13 @@ max_act_viewer.update_yaxes(visible=False)
 max_act_dist = px.bar(pd.DataFrame([{'label': 'unknown', 'max_act': 0, 'num': 512}]), x='max_act', y='label', color='label')
 max_act_dist_layout = {
     'margin': dict(l=15, r=0, b=15, t=10, pad=0, autoexpand=False),
-    'height': 172,
+    'height': 167,
 }
 max_act_dist_x_layout = {
     'title': '', 'ticks': '', 'showticklabels': False, 'showline': False, 'side': 'top',
 }
 max_act_dist_y_layout = {
-    'title': '', 'ticks': '', 'tickfont_size': 8, 'tickangle': 270, 'showticklabels': True
+    'title': '', 'ticks': '', 'tickfont_size': 10, 'tickangle': 270, 'showticklabels': True
 }
 max_act_dist.update_layout(**max_act_dist_layout)
 max_act_dist.update_xaxes(visible=False)
@@ -155,9 +157,9 @@ max_count_dist.update_yaxes(max_act_dist_y_layout)
 mask_height = patch_height
 mask_viewer_layout = {
     'title': f'max iou: ', 'title_x': 0.5,
-    'margin': dict(l=0, r=0, b=0, t=20, pad=0),
+    'margin': dict(l=0, r=0, b=0, t=top_pad, pad=0),
     'newshape': dict(opacity=0.8, line=dict(color="yellow", width=3)),
-    'font': dict(size=8)
+    'font': dict(size=text_size)
 }
 mask_viewer = px.imshow(place_holder, binary_string=True)
 mask_viewer.update_layout(**mask_viewer_layout)
@@ -173,7 +175,7 @@ pca_plot_layouts = dict(
         xanchor="right",
     ),
     height=plot_height,
-    margin=dict(l=0, r=0, b=0, t=20, pad=0, autoexpand=True),
+    margin=dict(l=0, r=0, b=0, t=top_pad, pad=0, autoexpand=True),
     clickmode='event+select'
 )
 
@@ -245,7 +247,6 @@ image_viewer = dbc.Card(
         ),
     ], style={}
 )
-
 
 patch_viewer = dbc.Card(
     id="patchbox",
@@ -341,8 +342,8 @@ label_unit_utils = html.Div([
             html.Div(
                 id='topk',
                 children=[],
-                style={'height': '150px',
-                       "width": '260px',
+                style={'height': '120px',
+                       "width": '220px',
                        "margin-top": "60px",
                        "overflowX": "scroll"}
             ), width=4
@@ -391,7 +392,7 @@ report = dbc.Card(
         dbc.CardHeader(html.H3("Report")),
         dbc.CardBody(
             [
-                html.H6('unit distribution'),
+                html.H5('unit distribution'),
                 dbc.Col(
                     dcc.Graph(
                         id="count_report",
@@ -400,7 +401,7 @@ report = dbc.Card(
                     ),
                 ),
                 html.Hr(),
-                html.H6('activation value'),
+                html.H5('activation value'),
                 dbc.Col(
                     dcc.Graph(
                         id="max_report",
@@ -409,7 +410,7 @@ report = dbc.Card(
                     ),
                 ),
                 html.Hr(),
-                html.H6('activation area'),
+                html.H5('activation area'),
                 dbc.Col(
                     dcc.Graph(
                         id="report",
@@ -597,9 +598,9 @@ def compute_unit_ious(relayout_data, patch_figure, pca_data):
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
             title=f'unit {max_unit} | max iou: {round(max(ious), 2)}', title_x=0.5,
-            margin=dict(l=0, r=0, b=0, t=20, pad=0),
+            margin=dict(l=0, r=0, b=0, t=top_pad, pad=0),
             font=dict(
-                size=8,
+                size=text_size,
             )
         )
         max_fig.update_xaxes(visible=False)
@@ -620,9 +621,9 @@ def compute_unit_ious(relayout_data, patch_figure, pca_data):
         max_fig = px.imshow(max_np, binary_string=True)
         max_fig.update_layout(
             title=f'max value', title_x=0.5,
-            margin=dict(l=0, r=0, b=0, t=20, pad=0),
+            margin=dict(l=0, r=0, b=0, t=top_pad, pad=0),
             font=dict(
-                size=8,
+                size=text_size,
             )
         )
         max_fig.update_xaxes(visible=False)
